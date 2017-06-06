@@ -21,5 +21,21 @@
 # SOFTWARE.
 
 # this class represents one implementation of a prediction network.
-class PredictionNetwork:
+class PredictionModel:
 
+
+    # this method should be implemented to provide a train method
+    #
+    # - inputs: The inputs for the model, based on which it should
+    #           predict.
+    # - predictions: The predictions, such that an error can be
+    #                calculated
+    def train(self, inputs, predictions):
+        raise NotImplementedError("Please Implement this method")
+
+    # this method should be used to predict the next state based
+    # on the current inputs
+    #
+    # - inputs just the list of frames
+    def predict(self, inputs):
+        raise NotImplementedError("Please implement this method")
