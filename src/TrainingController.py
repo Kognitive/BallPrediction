@@ -27,7 +27,7 @@ from src.PredictionModel import PredictionModel
 
 # this class represents the train network task, which used the
 # predicition model.
-class TrainNetworkTask:
+class TrainingController:
 
     # this constructor creates a new data iterator
     # and saves the passed prediction model
@@ -51,6 +51,7 @@ class TrainNetworkTask:
         ous = self.I.get_output_size()
 
         # for each episode
+        eval_res = np.empty(num_episodes)
         for episode in range(num_episodes):
 
             # obtain the training data
@@ -68,6 +69,10 @@ class TrainNetworkTask:
                 # simply perform a step with the model
                 self.P.train(x, y)
 
+            # save the evaluation result
+            eval_res[episode] = self.evaluate()
+
+
     # this method evaluates the error on the validation set
     def evaluate(self):
 
@@ -75,4 +80,4 @@ class TrainNetworkTask:
         [x, y] = self.V.get_all()
 
         # return the summed failure
-        return np.sum((self.P.predict(x) - y) ** 2)
+        return np.sum((self.P.predict(x) - y) ** 2, axis=0)

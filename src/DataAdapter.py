@@ -26,7 +26,7 @@ import scipy.ndimage as sp
 # this class can be used to create a data iterator. This so called data
 # adapter can be used to specify a location for training data. The interface
 # of the iterator can then be used to iterate over the files.
-class DataIterator:
+class DataAdapter:
 
     # this is the constructor for a data iterator. You have to supply it
     # via the file path to the root - containing all training samples.
@@ -57,10 +57,14 @@ class DataIterator:
 
     # this method returns the input size
     def get_input_size(self):
-
         return 10
 
     # this method returns the output size
     def get_output_size(self):
-
         return 10
+
+
+    # this method iterates over all training examples and returns all
+    # combined in one numpy vector
+    def get_all(self):
+        return NotImplementedError("Implemtn please")
