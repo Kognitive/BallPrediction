@@ -39,3 +39,7 @@ class PredictionModel:
     # - inputs just the list of frames
     def predict(self, inputs):
         raise NotImplementedError("Please implement this method")
+
+    # this method defines the batch size for a model
+    def get_batch_size(self):
+        return 10
