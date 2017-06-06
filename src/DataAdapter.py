@@ -54,3 +54,13 @@ class DataIterator:
 
         self.data_counter = self.data_counter + 1
         return self.obtain()
+
+    # this method returns the input size
+    def get_input_size(self):
+
+        return 10
+
+    # this method returns the output size
+    def get_output_size(self):
+
+        return 10
