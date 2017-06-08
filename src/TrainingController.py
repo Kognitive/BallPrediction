@@ -22,7 +22,7 @@
 
 # import the necessary packages
 import numpy as np
-from src.DataAdapter import DataAdapter
+
 from src.PredictionModel import PredictionModel
 
 # this class represents the train network task, which used the
@@ -38,30 +38,21 @@ class TrainingController:
         assert isinstance(prediction_model, PredictionModel)
 
         # save it internally
-        self.I = DataAdapter(train_root)
-        self.V = DataAdapter(val_root)
+        self.I = prediction_model.get_data_adapter(train_root)
+        self.V = prediction_model.get_data_adapter(val_root)
         self.P = prediction_model
 
     # this method trains the internal prediction model
     def train(self, num_episodes, num_steps):
 
         # get some values
-        bs = self.P.get_batch_size()
-        ins = self.I.get_input_size()
-        ous = self.I.get_output_size()
+        [x, y] = self.I.get_all()
 
         # for each episode
         eval_res = np.empty(num_episodes)
         for episode in range(num_episodes):
 
-            # obtain the training data
-            x = np.empty([ins, bs])
-            y = np.empty([ous, bs])
-            for batch_element in range(bs):
-
-                [i, o] = self.I.next()
-                x[batch_element, :] = i
-                y[batch_element, :] = o
+            print("Episode " + str(episode))
 
             # now we want to perform num_steps steps
             for num_step in range(num_steps):
@@ -72,6 +63,7 @@ class TrainingController:
             # save the evaluation result
             eval_res[episode] = self.evaluate()
 
+        return eval_res
 
     # this method evaluates the error on the validation set
     def evaluate(self):
@@ -80,4 +72,4 @@ class TrainingController:
         [x, y] = self.V.get_all()
 
         # return the summed failure
-        return np.sum((self.P.predict(x) - y) ** 2, axis=0)
+        return 0.5 * np.sum(np.sum((self.P.predict(x) - y) ** 2, axis = 0), axis=0)
