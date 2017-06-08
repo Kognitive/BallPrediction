@@ -22,20 +22,27 @@
 
 # import the training controller
 import matplotlib.pyplot as plt
-from src.TrainingController import TrainingController
-from src.PredictionModel import PredictionModel
-from src.models.NeuralNetwork import NeuralNetwork
+import numpy as np
+
+from src.controller.concrete.FoldController import TrainingController, FoldController
+from src.data_adapter.concrete.KOffsetAdapter import KOffsetAdapter
+from src.models.PredictionModel import PredictionModel
+from src.models.concrete.NeuralNetwork import NeuralNetwork
 
 # this is the evaluation
-trainroot = 'training_data/data_v0'
-validationroot = 'validation_data/data_v0'
+adapter = KOffsetAdapter(20, 1, 120, 'training_data/data_v1')
 show_plots = True
+N = 20
+
+# settngs from data
+in_size = adapter.get_exact_input_size()
+out_size = adapter.get_exact_output_size()
 
 # first of all create a  list of prediction models
 models = list()
 
 # add your models here
-models.append(NeuralNetwork([90, 100, 100, 3]))
+models.append(NeuralNetwork([in_size, 100, out_size]))
 
 # foreeach model traijn the model and print the results7
 for model in models:
@@ -43,21 +50,32 @@ for model in models:
     # check if model is prediction model
     assert isinstance(model, PredictionModel)
 
-    # create a controller and traing it
-    controller = TrainingController('training_data/data_v0', 'validation_data/data_v0', model)
+    # define the overall error
+    overall_error = np.zeros([2, model.get_num_episodes()])
 
-    # get episode and step count from model and train consequently
-    episodes = model.get_num_episodes()
-    steps = model.get_num_steps()
-    error = controller.train(episodes, steps)
+    # set the range
+    for k in range(N):
 
-    # # generate kind of a report
-    report = "------------------------------\n" \
-             + "Model: " + str(model.get_name()) + "\n" \
-             + "Error-Rate: " + str(error[-1]) + "\n" \
-             + "------------------------------"
+        # create a controller and traing it
+        controller = FoldController(adapter, model, k, N)
 
-    print(report)
+        # get episode and step count from model and train consequently
+        episodes = model.get_num_episodes()
+        steps = model.get_num_steps()
+        error = controller.train(episodes, steps)
+        overall_error = overall_error + error
+
+        # # generate kind of a report
+        report = "------------------------------\n" \
+                 + "Model: " + str(model.get_name()) + "\n" \
+                 + "Validation Error: " + str(error[0, -1]) + "\n" \
+                 + "Train Error: " + str(error[1, -1]) + "\n" \
+                 + "------------------------------"
+
+        print(report)
+
+    # normalize error
+    overall_error = overall_error / N
 
     # if we want to show the plots
     if (show_plots):
@@ -67,5 +85,8 @@ for model in models:
 
         # define title and
         plt.title(model.get_name())
-        plt.plot(range(episodes), error)
+        plt.plot(range(episodes), overall_error[0, :], label='Validation')
+        plt.plot(range(episodes), overall_error[1, :], label='Train')
+        plt.legend()
+        plt.xlim([0, episodes - 1])
         plt.show()
