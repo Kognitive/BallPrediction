@@ -94,14 +94,6 @@ class NeuralNetwork(PredictionModel):
     def predict(self, inputs):
         return self.sess.run(self.eval_model, feed_dict={ self.x: inputs })
 
-    # this method defines the batch size for a model
-    def get_batch_size(self):
-        return 10
-
-    # this method can be used to retrieve the numer of episodes
-    def get_num_episodes(self):
-        return 10
-
-    # this method returns the number of steps
-    def get_num_steps(self):
-        return 10
+    def reset(self):
+        init = tf.global_variables_initializer()
+        self.sess.run(init)

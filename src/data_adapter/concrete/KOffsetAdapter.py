@@ -69,7 +69,6 @@ class KOffsetAdapter(DataAdapter, DataIterator):
 
         # create empty positions array
         self.positions = list()
-        self.cP = 0
 
         # iterate over the subdirs
         for dir in subdirs:
@@ -81,13 +80,13 @@ class KOffsetAdapter(DataAdapter, DataIterator):
     def obtain(self):
 
         # pass back a tuple containing the current training row
-        return (self.positions[self.cP][self.counter] + 5.0) / 10.0
+        return (self.positions[self.counter] + 5.0) / 10.0
 
     # this method should deliver the size of the data.
     def get_size(self):
 
         # simply deliver the size of the positions
-        return np.size(self.positions[self.cP], axis=0)
+        return len(self.positions)
 
     # this method delivers all immediate subdirectories
     def get_immediate_subdirectories(self, d):
@@ -116,64 +115,67 @@ class KOffsetAdapter(DataAdapter, DataIterator):
         training_data_pos = np.empty([self.I * 3, 0])
         target_data_pos = np.empty([self.O * 3, 0])
         count = 0
+        queue_size = self.I + self.K
+
+        # integrate
+        tr_data_pos = list()
+        ta_data_pos = list()
+
+        # reset at start
+        self.reset()
 
         # iterate over all positions
-        for pos in self.positions:
+        while self.has_next():
 
             # count all samples
-            self.reset()
+            trajectory = self.next()
+
+            # continue path not good
+            if (np.size(trajectory, 0) <= queue_size): continue
 
             # define the array, used as a queue
-            array = np.empty([3, self.I + self.K])
+            array = np.empty([queue_size, 3])
 
             # fill the first I examples, with the next value
-            for i in range(self.I):
-                array[:, i] = self.next()
-
-            # integrate
-            array_ind = self.I
-            offset = self.K
+            for i in range(queue_size):
+                array[i, :] = trajectory[i, :]
 
             # solange ein nächstes verfügbar ist
-            while self.has_next():
+            num_points = np.size(trajectory, 0)
+
+            # create tr and ta
+            tr = np.empty([num_points - queue_size, self.I * 3])
+            ta = np.empty([num_points - queue_size, self.O * 3])
+
+            for el in range(queue_size, num_points):
 
                 # get next sample
-                n = self.next()
+                n = trajectory[el, :]
+                queue_index = el % queue_size
 
-                # check whether the offset is zero, in order to
-                # append a training example to the internal structure.
-                if (offset == 0):
+                # get the right and left indices
+                right = (queue_index + self.I) % queue_size
+                left = queue_index
 
-                    # get the right and left indices
-                    right = (array_ind - self.K + 1 + self.I + self.K) % (self.I + self.K)
-                    left = right - self.I
-
-                    # when the left is bigger than zero, extract only one part
-                    # otherwise two
-                    if (left >= 0):
-                        samples = np.reshape(np.transpose(array[:, left:right]), (right - left) * 3)
-                    else:
-                        stacked = np.hstack([array[:, left:], array[:, 0:right]])
-                        samples = np.reshape(np.transpose(stacked), (right - left) * 3)
-
-                    # append to training data_adapter
-                    input_ex = np.expand_dims(samples, 1)
-                    training_data_pos = np.hstack([training_data_pos, input_ex])
-                    target_data_pos = np.hstack([target_data_pos, np.expand_dims(n[:], 1)])
-                    count = count + 1
+                # when the left is bigger than zero, extract only one part
+                # otherwise two
+                if (left < right):
+                    samples = np.reshape(array[left:right, :], self.I * 3)
 
                 else:
-                    offset = offset - 1
+                    stacked = np.vstack([array[left:, :], array[:right, :]])
+                    samples = np.reshape(stacked, self.I * 3)
 
                 # forward the array index
-                array[:, array_ind] = n
-                array_ind = (array_ind + 1) % (self.I + self.K)
+                array[queue_index, :] = n
+                tr[el - queue_size, :] = samples
+                ta[el - queue_size, :] = n
 
-            self.cP = self.cP + 1
+            # append to training data_adapter
+            tr_data_pos.append(tr)
+            ta_data_pos.append(ta)
 
-        # create permutation matrix
-        permut = np.random.permutation(count)
-        permut = np.arange(count)
+
 
         # pass pack all positions
-        self.cache = [training_data_pos[:, permut], target_data_pos[:, permut]]
+        self.cache = [tr_data_pos, ta_data_pos]

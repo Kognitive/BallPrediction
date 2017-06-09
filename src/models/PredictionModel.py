@@ -45,6 +45,9 @@ class PredictionModel:
     def predict(self, inputs):
         raise NotImplementedError("Please implement this method")
 
+    def reset(self):
+        raise NotImplementedError("Please implement this method")
+    
     # this method defines the batch size for a model
     def get_batch_size(self):
         raise NotImplementedError("Specify a batch size")

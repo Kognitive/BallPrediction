@@ -29,7 +29,14 @@ from src.models.PredictionModel import PredictionModel
 from src.data_adapter.DataAdapter import DataAdapter
 
 # this class is a basic controller
-class FoldController(TrainingController):
+from src.utils.Progressbar import Progressbar
+
+
+class ProgressBar(object):
+    pass
+
+
+class PathFoldController(TrainingController):
 
     # this constructor creates a new data_adapter iterator
     # and saves the passed prediction model
@@ -49,21 +56,38 @@ class FoldController(TrainingController):
         # save it internally
         self.M = model
 
-        # fold the data
-        data = adapter.get_complete_training_data()
-        num = int(np.ceil(np.size(data[0], 1) / N))
+        # get the path count and train and target data
+        [tra, targ] = adapter.get_complete_training_data()
+        path_count = len(tra)
+        permutation = np.random.permutation(path_count)
+
+        # get the num
+        num = int(np.ceil(path_count / N))
 
         # divide into validation and training data
         l = num * F
         r = num * (F + 1)
-        self.V = [data[0][:, l:r], data[1][:, l:r]]
-        self.T = [np.hstack([data[0][:, :l], data[0][:, r:]]),
-                  np.hstack([data[1][:, :l], data[1][:, r:]])]
+
+        # get slices
+        slices_va = permutation[l:r]
+        slices_tr = np.hstack([permutation[:l], permutation[r:]])
+
+        # get filtered data
+        filtered_va = [np.transpose(np.vstack([tra[slice] for slice in slices_va])), np.transpose(np.vstack([targ[slice] for slice in slices_va]))]
+        filtered_tr = [np.transpose(np.vstack([tra[slice] for slice in slices_tr])), np.transpose(np.vstack([targ[slice] for slice in slices_tr]))]
+
+        self.V = filtered_va
+        self.T = filtered_tr
+
+        progressbar_len = 40
+        print(progressbar_len * "-")
+        print("Validation set size: " + str(np.size(self.V[0], 1)))
+        print("Train set size: " + str(np.size(self.T[0], 1)))
 
     # this method trains the internal prediction model
     def train(self, num_episodes, num_steps):
 
-        progressbar_len = 30
+        progressbar_len = 40
         print(progressbar_len * "-")
         print("Training started:")
 
@@ -74,17 +98,13 @@ class FoldController(TrainingController):
         eval_res = np.empty([2, num_episodes])
 
         # define progressbar length
-        batch_pack = num_episodes / progressbar_len
-        it_batch_pack = batch_pack
-        print(progressbar_len * '=')
-        print(int(1 / batch_pack) * "=", end='', flush=True)
+        pbar = Progressbar(num_episodes, progressbar_len)
 
+        # execute episodes
         for episode in range(num_episodes):
 
-            # print just one character
-            while (episode > int(it_batch_pack)):
-                print('=', end='', flush=True)
-                it_batch_pack = it_batch_pack + batch_pack
+            # progress by one with the bar
+            pbar.progress()
 
             # now we want to perform num_steps steps
             for num_step in range(num_steps):

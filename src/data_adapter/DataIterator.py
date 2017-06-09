@@ -52,4 +52,4 @@ class DataIterator:
 
     # this method resets the counter
     def reset(self):
-        self.counter = 0
+        self.counter = -1
