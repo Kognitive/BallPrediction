@@ -25,9 +25,8 @@
 # implement batch like training for neural networks
 class DataIterator:
 
-    # simply set the counter to 0, so you can iterate over
+    # simply set the counter to -1, so you can iterate over
     def __init__(self):
-        self.counter = 0
         self.reset()
 
     # this method can be used to obtain the current data_adapter element.
@@ -41,7 +40,7 @@ class DataIterator:
     # check if it has an return appropriately next
     def next(self):
         if not self.has_next():
-            raise NotImplementedError("Please check in advance if there is a next element.")
+            raise IndexError("Please check in advance if there is a next element.")
 
         self.counter = self.counter + 1
         return self.obtain()

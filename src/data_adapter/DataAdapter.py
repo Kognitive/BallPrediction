@@ -20,11 +20,34 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from src.data_adapter.DataIterator import DataIterator
 # this class represents a data adapter, you have to extend this
 # class in order to use it with a training controller.
-class DataAdapter:
+class DataAdapter(DataIterator):
+
+    def __init__(self):
+        super().__init__()
+        self.index = -1
+        self.data_loaded = False
 
     # this method has to be implemented and deliver some training examples
     # from the storage
     def get_complete_training_data(self):
         raise NotImplementedError("You have to supply a training set.")
+
+    def __initialiseIterator(self):
+        if self.data_loaded:
+            return
+        self.data = self.get_complete_training_data()
+        self.data_loaded = True
+
+    def obtain(self):
+        self.__initialiseIterator()
+        if self.index >= 0 and self.index < len(self.data):
+            return self.data[self.index]
+        raise IndexError("No item to obtain at current position")
+
+    def get_size(self):
+        self.__initialiseIterator()
+        return len(self.data)
+
