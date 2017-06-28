@@ -1,0 +1,70 @@
+# MIT License
+#
+# Copyright (c) 2017 Markus Semmler, Stefan Fabian
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+import numpy as np
+
+from os import listdir
+from os.path import isfile, join
+
+from src.data_adapter.DataLoader import DataLoader
+
+# This class can be used to load the trajectories from the HD. The
+# output format itself is a trajectory of x-y-z coordinates. The whole
+# loader is designed in
+class SimDataLoader(DataLoader):
+
+    # this is the constructor for a simulation training data adapter
+    #
+    #   root - The root folder for the data.
+    #
+    def __init__(self, root):
+
+        # define a counter
+        super().__init__()
+
+        # set boolean flag to false
+        self.root = root
+
+    # this method loads the data
+    def load_data(self):
+
+        # if already loaded return
+        if self.loaded: return
+        self.loaded = True
+
+        # get list of all subdirs
+        subfiles = self.get_immediate_subfiles(self.root)
+
+        # create empty positions array
+        data = list()
+
+        # iterate over the subdirs
+        for file in subfiles:
+
+            # load the positions as well as the timestamp
+            data.append(np.loadtxt(file)[:, 0:3])
+
+        return data
+
+    # this method delivers all immediate subdirectories
+    def get_immediate_subfiles(self, d):
+        return [join(d, f) for f in listdir(d) if isfile(join(d, f))]
