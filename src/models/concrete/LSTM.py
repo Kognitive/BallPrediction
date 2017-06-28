@@ -75,7 +75,7 @@ class NeuralNetwork(PredictionModel):
 
     # this method is capable of retrieving the name from the model.
     def get_name(self):
-        return "Basic Neural Network"
+        return "LSTM"
 
     # this method should be implemented to provide a train method
     #

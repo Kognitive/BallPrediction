@@ -25,12 +25,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from src.controller.concrete.PathFoldController import PathFoldController
-from src.data_adapter.concrete.KOffsetAdapter import KOffsetAdapter
+from src.data_adapter.concrete.KOffsetAdapterSim import KOffsetAdapterSim
 from src.data_adapter.concrete.LowPassFilterAdapter import LowPassFilterAdapter
 from src.models.concrete.NeuralNetwork import NeuralNetwork
 
 # this is the evaluation
-adapter = LowPassFilterAdapter(KOffsetAdapter(20, 1, 1, 'training_data/data_v1'))
+adapter = LowPassFilterAdapter(KOffsetAdapterSim(20, 1, 1, 'sim_training_data/data_v1'))
 show_plots = True
 N = 5
 
@@ -39,8 +39,8 @@ in_size = 60
 out_size = 3
 
 # choose model
-model = NeuralNetwork([in_size, out_size])
-episodes = 10
+model = NeuralNetwork([in_size, 100, out_size])
+episodes = 100
 steps = 10
 
 # define the overall error
