@@ -26,7 +26,7 @@ import numpy as np
 # own packages
 from src.controller.TrainingController import TrainingController
 from src.models.PredictionModel import PredictionModel
-from src.data_adapter.DataAdapter import DataAdapter
+from src.data_loader.DataLoader import DataAdapter
 
 # this class is a basic controller
 from src.utils.Progressbar import Progressbar
@@ -38,7 +38,7 @@ class ProgressBar(object):
 
 class PathFoldController(TrainingController):
 
-    # this constructor creates a new data_adapter iterator
+    # this constructor creates a new data_loader iterator
     # and saves the passed prediction model
     #
     #   adapter - A data adpater, which is capable of supplying the data.
@@ -124,7 +124,7 @@ class PathFoldController(TrainingController):
     # this method evaluates the error on the validation set
     def validation_error(self):
 
-        # this gets all validation data_adapter examples
+        # this gets all validation data_loader examples
         [x, y] = self.V
 
         # return the summed failure
@@ -133,7 +133,7 @@ class PathFoldController(TrainingController):
     # this method evaluates the error on the validation set
     def train_error(self):
 
-        # this gets all validation data_adapter examples
+        # this gets all validation data_loader examples
         [x, y] = self.T
 
         # return the summed failure

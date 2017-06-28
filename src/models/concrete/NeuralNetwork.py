@@ -22,7 +22,7 @@
 
 import tensorflow as tf
 
-from src.data_adapter.concrete.KOffsetAdapter import KOffsetAdapter
+from src.data_loader.concrete.KOffsetAdapter import KOffsetAdapter
 from src.models.PredictionModel import PredictionModel
 
 

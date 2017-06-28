@@ -60,6 +60,6 @@ class PredictionModel:
     def get_num_steps(self):
         raise NotImplementedError("Specify number of steps per episode.")
 
-    # basically define a data_adapter adapter
+    # basically define a data_loader adapter
     def get_data_adapter(self, root):
-        raise NotImplementedError("Specify a data_adapter adapter.")
+        raise NotImplementedError("Specify a data_loader adapter.")

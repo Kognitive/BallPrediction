@@ -25,8 +25,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from src.controller.concrete.PathFoldController import PathFoldController
-from src.data_adapter.concrete.KOffsetAdapterSim import KOffsetAdapterSim
-from src.data_adapter.concrete.LowPassFilterAdapter import LowPassFilterAdapter
+from src.data_loader.concrete.SimDataLoader import KOffsetAdapterSim
+from src.data_filter.concrete.LowPassFilterAdapter import LowPassFilterAdapter
 from src.models.concrete.NeuralNetwork import NeuralNetwork
 
 # this is the evaluation

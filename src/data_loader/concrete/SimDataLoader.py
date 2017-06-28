@@ -25,11 +25,13 @@ import numpy as np
 from os import listdir
 from os.path import isfile, join
 
-from src.data_adapter.DataLoader import DataLoader
+from src.data_loader.DataLoader import DataLoader
 
 # This class can be used to load the trajectories from the HD. The
 # output format itself is a trajectory of x-y-z coordinates. The whole
-# loader is designed in
+# loader is designed in a lazy style.
+
+
 class SimDataLoader(DataLoader):
 
     # this is the constructor for a simulation training data adapter
@@ -47,10 +49,6 @@ class SimDataLoader(DataLoader):
     # this method loads the data
     def load_data(self):
 
-        # if already loaded return
-        if self.loaded: return
-        self.loaded = True
-
         # get list of all subdirs
         subfiles = self.get_immediate_subfiles(self.root)
 
@@ -66,5 +64,6 @@ class SimDataLoader(DataLoader):
         return data
 
     # this method delivers all immediate subdirectories
-    def get_immediate_subfiles(self, d):
+    @staticmethod
+    def get_immediate_subfiles(d):
         return [join(d, f) for f in listdir(d) if isfile(join(d, f))]

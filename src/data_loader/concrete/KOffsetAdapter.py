@@ -21,19 +21,17 @@
 # SOFTWARE.
 
 import numpy as np
+from glob import glob
 
-from os import listdir
-from os.path import isfile, join
-
-from src.data_adapter.DataAdapter import DataAdapter
-from src.data_adapter.DataIterator import DataIterator
+from src.data_loader.DataLoader import DataAdapter
+from src.data_loader.DataIterator import DataIterator
 
 # This class represents an k offset adapter. It basically divides the
 # trajectories into training examples for a pseudo recurrent neural
 # network.
-class KOffsetAdapterSim(DataAdapter, DataIterator):
+class KOffsetAdapter(DataAdapter, DataIterator):
 
-    # this is the constructor for a data_adapter iterator. You have to supply it
+    # this is the constructor for a data_loader iterator. You have to supply it
     # via the file path to the root - containing all training samples.
     #
     #   I - Specify the size of the input, e.g. how many input frames
@@ -67,18 +65,18 @@ class KOffsetAdapterSim(DataAdapter, DataIterator):
         self.loaded = True
 
         # get list of all subdirs
-        subfiles = self.get_immediate_subfiles(self.root)
+        subdirs = self.get_immediate_subdirectories(self.root)
 
         # create empty positions array
         self.positions = list()
 
         # iterate over the subdirs
-        for file in subfiles:
+        for dir in subdirs:
 
             # load the positions as well as the timestamp
-            self.positions.append(np.loadtxt(file)[:, 0:3])
+            self.positions.append(np.loadtxt(dir + "positions.txt"))
 
-    # this method can be used to obtain the current data_adapter element.
+    # this method can be used to obtain the current data_loader element.
     def obtain(self):
 
         # pass back a tuple containing the current training row
@@ -91,8 +89,8 @@ class KOffsetAdapterSim(DataAdapter, DataIterator):
         return len(self.positions)
 
     # this method delivers all immediate subdirectories
-    def get_immediate_subfiles(self, d):
-        return [join(d, f) for f in listdir(d) if isfile(join(d, f))]
+    def get_immediate_subdirectories(self, d):
+        return glob(d + "/*/")
 
     # this method returns the input size
     def get_exact_input_size(self):
@@ -173,7 +171,7 @@ class KOffsetAdapterSim(DataAdapter, DataIterator):
                 tr[el - queue_size, :] = samples
                 ta[el - queue_size, :] = n
 
-            # append to training data_adapter
+            # append to training data_loader
             tr_data_pos.append(tr)
             ta_data_pos.append(ta)
 

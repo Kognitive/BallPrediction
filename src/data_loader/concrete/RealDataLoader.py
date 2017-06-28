@@ -20,34 +20,48 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from src.data_adapter.DataIterator import DataIterator
-# this class represents a data adapter, you have to extend this
-# class in order to use it with a training controller.
-class DataAdapter(DataIterator):
+import numpy as np
 
-    def __init__(self):
+from glob import glob
+from src.data_loader.DataLoader import DataLoader
+
+# This class can be used to load the trajectories from the HD. The
+# output format itself is a trajectory of x-y-z coordinates. The whole
+# loader is designed in a lazy style.
+
+
+class RealDataLoader(DataLoader):
+
+    # this is the constructor for a simulation training data adapter
+    #
+    #   root - The root folder for the data.
+    #
+    def __init__(self, root):
+
+        # define a counter
         super().__init__()
-        self.index = -1
-        self.data_loaded = False
 
-    # this method has to be implemented and deliver some training examples
-    # from the storage
-    def get_complete_training_data(self):
-        raise NotImplementedError("You have to supply a training set.")
+        # set boolean flag to false
+        self.root = root
 
-    def __initialiseIterator(self):
-        if self.data_loaded:
-            return
-        self.data = self.get_complete_training_data()
-        self.data_loaded = True
+    # this method loads the data
+    def load_data(self):
 
-    def obtain(self):
-        self.__initialiseIterator()
-        if self.index >= 0 and self.index < len(self.data):
-            return self.data[self.index]
-        raise IndexError("No item to obtain at current position")
+        # get list of all subdirs
+        subdirs = self.get_immediate_subdirectories(self.root)
 
-    def get_size(self):
-        self.__initialiseIterator()
-        return len(self.data)
+        # create empty positions array
+        data = list()
 
+        # iterate over the subdirs
+        for dir in subdirs:
+
+            # load the positions as well as the timestamp
+            data.append(np.loadtxt(dir + "positions.txt"))
+
+        return data
+
+    # this method delivers all immediate subdirectories
+    @staticmethod
+    def get_immediate_subdirectories(d):
+        return glob(d + "/*/")

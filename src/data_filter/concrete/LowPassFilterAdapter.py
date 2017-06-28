@@ -1,11 +1,11 @@
 import numpy as np
 from scipy.signal import butter, lfilter
-from src.data_adapter.DataAdapter import DataAdapter
+from src.data_loader.DataLoader import DataLoader
 
 # Applies a low pass filter to the data
-class LowPassFilterAdapter(DataAdapter):
+class LowPassFilterAdapter(DataLoader):
 
-    def __init__(self, adapter: DataAdapter, cutoff = 1.2, fs = 120.0, order = 6):
+    def __init__(self, adapter: DataLoader, cutoff = 1.2, fs = 120.0, order = 6):
         super().__init__()
         self.cutoff = cutoff
         self.fs = fs
