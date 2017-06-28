@@ -20,30 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# This interface represents a basic DataFilter. It only supports one operation
-# and gets used inside of the data adapter, when the data is loaded.
+# This class is a basic DataTransformer. Therefore it has one method, which
+# should - in a concrete implementation - correctly transform the data to
+# the desired format.
 
 
-class DataFilter:
+class DataTransformer:
 
-    # This method should take the trajectory and return the filtered version of
-    # it. It applies the internal filter method to each trajectory and removes
-    # the empty ones.
+    # This method has to be implemented in order to support the data transformation.
     #
-    # trajectories - This is a list of trajectories
+    # trajectories - the list of trajectories to transform.
     #
-    def filter(self, trajectories):
-
-        # filter trajectories.
-        f_trajectories = [self.apply_filter(trajectory) for trajectory in trajectories]
-        rf_trajectories = list(filter(lambda x: x.shape[0] != 0, f_trajectories))
-
-        return rf_trajectories
-
-    # This method should take one trajectory and return the filtered version of
-    # it.
-    #
-    # trajectory - This is a trajectory
-    #
-    def apply_filter(self, trajectory):
-        raise NotImplementedError("You have to supply a trajectory filter method.")
+    def transform(self, trajectories):
+        raise NotImplementedError("You have to implement a transform method for the data transformer")

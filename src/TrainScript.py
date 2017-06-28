@@ -24,24 +24,27 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+
+from src.data_filter.concrete.LowPassFilter import LowPassFilter
 from src.controller.concrete.PathFoldController import PathFoldController
-from src.data_loader.concrete.SimDataLoader import KOffsetAdapterSim
-from src.data_filter.concrete.LowPassFilterAdapter import LowPassFilterAdapter
+from src.data_loader.concrete.SimDataLoader import SimDataLoader
 from src.models.concrete.NeuralNetwork import NeuralNetwork
 
-# this is the evaluation
-adapter = LowPassFilterAdapter(KOffsetAdapterSim(20, 1, 1, 'sim_training_data/data_v1'))
-show_plots = True
+# define IOK
+I = 20
+O = 1
+K = 1
 N = 5
+show_plots = True
 
-# settngs from data
-in_size = 60
-out_size = 3
+# this is the evaluation
+loader = SimDataLoader('sim_training_data/data_v1')
+#loader.set_data_filter(LowPassFilter())
 
 # choose model
-model = NeuralNetwork([in_size, 100, out_size])
-episodes = 100
-steps = 10
+model = NeuralNetwork([I * 3, 100, O * 3], I, O, K)
+episodes = 3
+steps = 1
 
 # define the overall error
 overall_error = np.zeros([2, episodes])
@@ -50,12 +53,12 @@ overall_error = np.zeros([2, episodes])
 for k in range(N):
 
     report = (40 * "-") + "\n" \
-             + "[" + str(k + 1) + "/" + str(N) + "] Model: " + str(model.get_name())
+             + "[" + str(k + 1) + "/" + str(N) + "] Model: " + str(model.name)
     print(report)
 
     # create a controller and traing it
-    model.reset()
-    controller = PathFoldController(adapter, model, k, N)
+    model.init_params()
+    controller = PathFoldController(loader, model, k, N)
 
     # get episode and step count from model and train consequentl
     error = controller.train(episodes, steps)
@@ -78,7 +81,7 @@ if (show_plots):
     fig = plt.figure()
 
     # define title and
-    plt.title(model.get_name())
+    plt.title(model.name)
     plt.plot(range(episodes), overall_error[0, :], label='Validation')
     plt.plot(range(episodes), overall_error[1, :], label='Train')
     plt.legend()

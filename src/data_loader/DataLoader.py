@@ -39,11 +39,7 @@ class DataLoader:
         self.filter = IdentityDataFilter()
         self.loaded = False
         self.data = list()
-
-    # This method returns the size of the data set. So it basically tells
-    # how many different trajectories are available
-    def get_size(self):
-        return len(self.data)
+        self.size = 0
 
     # This method has to be implemented to deliver some training data
     def load_data(self):
@@ -55,18 +51,26 @@ class DataLoader:
 
         # if the data is not loaded already, reload it.
         if not self.loaded:
-            self.loaded = True
-            self.data = list()
 
-            # filter all trajectories
-            for unfiltered in self.load_data():
-                self.data.append(self.filter.filter(unfiltered))
+            print(40 * "-")
+            print("Started to fetch data from HD")
+
+            d = self.load_data()
+            print("Data successfully loaded from HD")
+
+            self.loaded = True
+            self.data = [0.5 + x / 10 for x in self.filter.filter(d)]
+            self.size = len(self.data)
+            print("Normalized and filtered the data.")
 
         return self.data
 
     # This method takes the passed data filter from the argument and
     # sets it inside in the filter attribute, so it can be used when
     # the data is loaded.
+    #
+    # data_filter - Pass the data filter, to use for the loader
+    #
     def set_data_filter(self, data_filter):
         assert isinstance(data_filter, DataFilter)
 

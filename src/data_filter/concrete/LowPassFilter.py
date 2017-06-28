@@ -31,26 +31,30 @@ from src.data_filter.DataFilter import DataFilter
 
 class LowPassFilter(DataFilter):
 
-    def __init(self, cutoff=1.2, fs=120.0, order=6):
-        self.cutoff = cutoff
-        self.fs = fs
-        self.order = order
+    # constructs a low pass filter.
+    #
+    # - W: Threshold, where to cut off the frequencies
+    # - F: frames per second
+    # - N: order of the filter
+    #
+    def __init__(self, W=1.2, F=120.0, N=6):
+        self.W = W
+        self.F = F
+        self.N = N
 
-    # Return the trajectory.
-    def filter(self, trajectories):
+    def apply_filter(self, data):
 
-        ftrajectories = [[self.__applyFilter(trajectories[i][j]) for j in range(len(trajectories[i]))]
-                 for i in range(len(trajectories))]
-        ftrajectories = [list(filter(lambda x: x.shape[0] != 0, ftrajectories[i])) for i in range(len(ftrajectories))]
+        # Normalize by Nyquist frequency
+        nyq = 0.5 * self.F
+        normal_cutoff = self.W / nyq
 
-        return ftrajectories
+        # apply the Butterworth filter
+        b, a = butter(self.N, normal_cutoff, btype='low', analog=False)
+        filtered_data = np.empty(data.shape)
 
-    def __applyFilter(self, data):
-        nyq = 0.5 * self.fs
-        normal_cutoff = self.cutoff / nyq
-        b, a = butter(self.order, normal_cutoff, btype='low', analog=False)
-        filtered_data = np.zeros(data.shape)
+        # Iterate over the vertical dimension
         for i in range(data.shape[1]):
-            filtered_data[:,i] = lfilter(b, a, data[:,i])
+            filtered_data[:, i] = lfilter(b, a, data[:, i])
+
         # Cut off parts of the begin and of the end because low pass filters tend to produce unusable output at the ends
-        return filtered_data[int(self.fs):len(filtered_data) - int(self.fs / 2),:]
+        return filtered_data[int(self.F):len(filtered_data) - int(self.F / 2), :]

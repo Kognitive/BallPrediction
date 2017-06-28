@@ -25,8 +25,8 @@ import numpy as np
 
 # own packages
 from src.controller.TrainingController import TrainingController
-from src.models.PredictionModel import PredictionModel
-from src.data_loader.DataLoader import DataAdapter
+from src.models.RecurrentPredictionModel import RecurrentPredictionModel
+from src.data_loader.DataLoader import DataLoader
 
 # this class is a basic controller
 from src.utils.Progressbar import Progressbar
@@ -41,24 +41,26 @@ class PathFoldController(TrainingController):
     # this constructor creates a new data_loader iterator
     # and saves the passed prediction model
     #
-    #   adapter - A data adpater, which is capable of supplying the data.
+    #   loader - A data loader, which is capable of supplying the data.
     #   model - choose a model wisely
     #   F - which fold should be selected
     #   N - how many folds are there overall
     #
-    def __init__(self, adapter, model, F, N):
+    def __init__(self, loader, model, F, N):
 
         # check whether the prediction model is an instance of the
         # correct interface
-        assert isinstance(model, PredictionModel)
-        assert isinstance(adapter, DataAdapter)
+        assert isinstance(model, RecurrentPredictionModel)
+        assert isinstance(loader, DataLoader)
 
         # save it internally
         self.M = model
 
         # get the path count and train and target data
-        [tra, targ] = adapter.get_complete_training_data()
-        path_count = len(tra)
+        trajectories = loader.load_complete_data()
+        path_count = len(trajectories)
+
+        # sample random permutation
         permutation = np.random.permutation(path_count)
 
         # get the num
@@ -72,17 +74,14 @@ class PathFoldController(TrainingController):
         slices_va = permutation[l:r]
         slices_tr = np.hstack([permutation[:l], permutation[r:]])
 
-        # get filtered data
-        filtered_va = [np.transpose(np.vstack([tra[slice] for slice in slices_va])), np.transpose(np.vstack([targ[slice] for slice in slices_va]))]
-        filtered_tr = [np.transpose(np.vstack([tra[slice] for slice in slices_tr])), np.transpose(np.vstack([targ[slice] for slice in slices_tr]))]
-
-        self.V = filtered_va
-        self.T = filtered_tr
+        # divide into validation and training
+        self.V = [trajectories[i] for i in slices_va]
+        self.T = [trajectories[i] for i in slices_tr]
 
         progressbar_len = 40
         print(progressbar_len * "-")
-        print("Validation set size: " + str(np.size(self.V[0], 1)))
-        print("Train set size: " + str(np.size(self.T[0], 1)))
+        print("Validation set size: " + str(len(self.V)) + " Trajectories")
+        print("Train set size: " + str(len(self.T)) + " Trajectories")
 
     # this method trains the internal prediction model
     def train(self, num_episodes, num_steps):
@@ -90,9 +89,6 @@ class PathFoldController(TrainingController):
         progressbar_len = 40
         print(progressbar_len * "-")
         print("Training started:")
-
-        # get some values
-        [x, y] = self.T
 
         # for each episode
         eval_res = np.empty([2, num_episodes])
@@ -106,11 +102,8 @@ class PathFoldController(TrainingController):
             # progress by one with the bar
             pbar.progress()
 
-            # now we want to perform num_steps steps
-            for num_step in range(num_steps):
-
-                # simply perform a step with the model
-                self.M.train(x, y)
+            # simply perform a step with the model
+            self.M.train(self.T, num_steps)
 
             # save the evaluation result
             eval_res[0, episode] = self.validation_error()
@@ -124,17 +117,9 @@ class PathFoldController(TrainingController):
     # this method evaluates the error on the validation set
     def validation_error(self):
 
-        # this gets all validation data_loader examples
-        [x, y] = self.V
-
-        # return the summed failure
-        return 0.5 * np.mean(np.sum((self.M.predict(x) - y) ** 2, axis=0), axis=0)
+        return self.M.validate(self.V)
 
     # this method evaluates the error on the validation set
     def train_error(self):
 
-        # this gets all validation data_loader examples
-        [x, y] = self.T
-
-        # return the summed failure
-        return 0.5 * np.mean(np.sum((self.M.predict(x) - y) ** 2, axis=0), axis=0)
+        return self.M.validate(self.T)
