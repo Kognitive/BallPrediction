@@ -28,5 +28,5 @@ class DataFilter:
 
     # This method should take the trajectory and return the filtered version of
     # it.
-    def filter(self, trajectory):
+    def filter(self, trajectories):
         raise NotImplementedError("You have to supply a filter method.")
