@@ -2,3 +2,4 @@
 .idea/
 # ignore cache files
 **/__pycache__/*
+**/*.pyc
