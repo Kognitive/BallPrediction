@@ -27,6 +27,7 @@ import numpy as np
 from src.controller.TrainingController import TrainingController
 from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 from src.data_loader.DataLoader import DataLoader
+from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
 
 # this class is a basic controller
 from src.utils.Progressbar import Progressbar
@@ -46,7 +47,7 @@ class PathFoldController(TrainingController):
     #   F - which fold should be selected
     #   N - how many folds are there overall
     #
-    def __init__(self, loader, model, F, N):
+    def __init__(self, loader, transformer, model, batch_size, F, N):
 
         # check whether the prediction model is an instance of the
         # correct interface
@@ -55,6 +56,7 @@ class PathFoldController(TrainingController):
 
         # save it internally
         self.M = model
+        self.batch_size = batch_size
 
         # get the path count and train and target data
         trajectories = loader.load_complete_data()
@@ -78,10 +80,16 @@ class PathFoldController(TrainingController):
         self.V = [trajectories[i] for i in slices_va]
         self.T = [trajectories[i] for i in slices_tr]
 
-        progressbar_len = 40
-        print(progressbar_len * "-")
         print("Validation set size: " + str(len(self.V)) + " Trajectories")
         print("Train set size: " + str(len(self.T)) + " Trajectories")
+
+        # transform the data
+        self.transformer = transformer
+        self.V = self.transformer.transform(self.V)
+        self.T = self.transformer.transform(self.T)
+
+        progressbar_len = 40
+        print(progressbar_len * "-")
 
     # this method trains the internal prediction model
     def train(self, num_episodes, num_steps):
@@ -102,8 +110,11 @@ class PathFoldController(TrainingController):
             # progress by one with the bar
             pbar.progress()
 
+            # sample the randomly
+            slices = np.random.randint(0, np.size(self.T, 2), self.batch_size)
+
             # simply perform a step with the model
-            self.M.train(self.T, num_steps)
+            self.M.train(self.T[:, :, slices], num_steps)
 
             # save the evaluation result
             eval_res[0, episode] = self.validation_error()
@@ -117,9 +128,24 @@ class PathFoldController(TrainingController):
     # this method evaluates the error on the validation set
     def validation_error(self):
 
-        return self.M.validate(self.V)
+        overall_error = 0
+        N = int(np.size(self.V, 2) / self.batch_size)
+
+        # make packages
+        for k in range(N):
+
+            overall_error += self.M.validate(self.V[:, :, (k*self.batch_size):((k+1)*self.batch_size)])
+
+        return overall_error
 
     # this method evaluates the error on the validation set
     def train_error(self):
 
-        return self.M.validate(self.T)
+        overall_error = 0
+        N = int(np.size(self.V, 2) / self.batch_size)
+
+        # make packages
+        for k in range(N):
+            overall_error += self.M.validate(self.T[:, :, (k * self.batch_size):((k + 1) * self.batch_size)])
+
+        return overall_error

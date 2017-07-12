@@ -29,36 +29,55 @@ from src.data_filter.concrete.LowPassFilter import LowPassFilter
 from src.controller.concrete.PathFoldController import PathFoldController
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
 from src.models.concrete.NeuralNetwork import NeuralNetwork
+from src.models.concrete.LSTM import LSTM
+from src.data_normalizer.concrete.FrameNormalizer import FrameNormalizer
+from src.data_normalizer.concrete.IdentityNormalizer import IdentityNormalizer
+from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
+
+# specify the result dir
+result_dir = 'run'
+data_dir = 'sim_training_data/data_v1'
+
+# set normalizer
+normalizer = IdentityNormalizer()
+# normalizer = FrameNormalizer([-5, 5], [-1, 1])
+
+episodes = 100
+batch_size = 1000
+steps = 10
 
 # define IOK
 I = 20
-O = 1
-K = 1
-N = 5
+
+# define the transformer
+transformer = FeedForwardDataTransformer(I)
+
+# define the model
+# def __init__(self, I, H, C, N, K):
+model = LSTM(3, 20, batch_size)
+# model = NeuralNetwork([I * 3] + 3 * [100] + [O * 3], I, O, K)
+
+# d
+NF = 10
 show_plots = True
 
 # this is the evaluation
-loader = SimDataLoader('sim_training_data/data_v1')
-#loader.set_data_filter(LowPassFilter())
-
-# choose model
-model = NeuralNetwork([I * 3, 100, O * 3], I, O, K)
-episodes = 3
-steps = 1
+loader = SimDataLoader(data_dir)
+loader.set_data_normalizer(normalizer)
 
 # define the overall error
 overall_error = np.zeros([2, episodes])
 
 # set the range
-for k in range(N):
+for k in range(NF):
 
     report = (40 * "-") + "\n" \
-             + "[" + str(k + 1) + "/" + str(N) + "] Model: " + str(model.name)
+             + "[" + str(k + 1) + "/" + str(NF) + "] Model: " + str(model.name)
     print(report)
 
-    # create a controller and traing it
+    # create a controller and train it
     model.init_params()
-    controller = PathFoldController(loader, model, k, N)
+    controller = PathFoldController(loader, transformer, model, batch_size, k, NF)
 
     # get episode and step count from model and train consequentl
     error = controller.train(episodes, steps)
@@ -72,7 +91,11 @@ for k in range(N):
     print(report)
 
 # normalize error
-overall_error = overall_error / N
+overall_error = overall_error / NF
+overall_error = np.sqrt(2 * overall_error)
+
+# un normalize the error
+# overall_error = normalizer.un_normalize(overall_error)
 
 # if we want to show the plots
 if (show_plots):

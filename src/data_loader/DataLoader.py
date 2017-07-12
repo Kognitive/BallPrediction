@@ -22,13 +22,14 @@
 
 from src.data_filter.DataFilter import DataFilter
 from src.data_filter.concrete.IdentityDataFilter import IdentityDataFilter
+from src.data_normalizer.DataNormalizer import DataNormalizer
+from src.data_normalizer.concrete.IdentityNormalizer import IdentityNormalizer
+
 
 # This class represents a DataLoader. It consists of some control variables and
 # a cache. In order to use it inside of the software with a concrete
 # implementation you have to give a load_data method, which basically returns
 # a list of trajectories.
-
-
 class DataLoader:
 
     # Basic initializer for the DataLoader
@@ -37,6 +38,7 @@ class DataLoader:
 
         # init the vars
         self.filter = IdentityDataFilter()
+        self.normalizer = IdentityNormalizer()
         self.loaded = False
         self.data = list()
         self.size = 0
@@ -59,7 +61,7 @@ class DataLoader:
             print("Data successfully loaded from HD")
 
             self.loaded = True
-            self.data = [0.5 + x / 10 for x in self.filter.filter(d)]
+            self.data = [self.normalizer.normalize(x) for x in self.filter.filter(d)]
             self.size = len(self.data)
             print("Normalized and filtered the data.")
 
@@ -77,5 +79,22 @@ class DataLoader:
         # set the filter and reset the data, because the new filter
         # has to be applied.
         self.filter = data_filter
+        self.__invalidate_loaded_data()
+
+    # This method takes a data normalizer and saves it internally.
+    #
+    # - data_normalizer: The data normalizer to use
+    #
+    def set_data_normalizer(self, data_normalizer):
+        assert isinstance(data_normalizer, DataNormalizer)
+
+        # set the normalizer and reset state of this object
+        self.normalizer = data_normalizer
+        self.__invalidate_loaded_data()
+
+    # This method resets the state internally. In detail it
+    # deletes the data from the object, so it has to be
+    # reacquired by the loader.
+    def __invalidate_loaded_data(self):
         self.loaded = False
         self.data = list()

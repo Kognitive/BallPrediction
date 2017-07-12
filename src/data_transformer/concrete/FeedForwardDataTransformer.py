@@ -37,11 +37,13 @@ class FeedForwardDataTransformer(DataTransformer):
     # O - the number of position outputs
     # K - the offset between input and output
     #
-    def __init__(self, I, O, K):
+    def __init__(self, I):
+
+        # save the hyper parameters
         self.I = I
-        self.O = O
-        self.K = K
-        self.QS = self.I + self.O + self.K
+
+        # this is the maximum size
+        self.QS = self.I + 1
 
     # This method has to be implemented in order to support the data transformation.
     #
@@ -49,13 +51,8 @@ class FeedForwardDataTransformer(DataTransformer):
     #
     def transform(self, trajectories):
 
-        # create the arrays
-        training_data_pos = np.empty([self.I * 3, 0])
-        target_data_pos = np.empty([self.O * 3, 0])
-
         # integrate
-        tr_data_pos = list()
-        ta_data_pos = list()
+        input_data = list()
 
         # create a new state queue
         state_queue = SetQueue(3, self.QS)
@@ -70,15 +67,12 @@ class FeedForwardDataTransformer(DataTransformer):
             # reset the queue
             state_queue.reset()
 
-            # fill queue
+            # fill complete queue with entries
             for i in range(self.QS - 1):
                 state_queue.insert(trajectory[i, :])
 
+            # gather the overall number of points
             num_points = np.size(trajectory, 0)
-
-            # create tr and ta
-            tr = np.empty([num_points - self.QS, self.I * 3])
-            ta = np.empty([num_points - self.QS, self.O * 3])
 
             # iterate over the remaining points
             for i in range(self.QS - 1, num_points):
@@ -86,13 +80,6 @@ class FeedForwardDataTransformer(DataTransformer):
                 # insert into queue
                 state_queue.insert(trajectory[i, :])
                 data = state_queue.get()
+                input_data.append(np.transpose(data))
 
-                # get input and output
-                tr[i - self.QS, :] = np.reshape(data[:self.I, :], self.I * 3)
-                ta[i - self.QS, :] = np.reshape(data[(self.I + self.K):, :], self.O * 3)
-
-            # append to training data_loader
-            tr_data_pos.append(tr)
-            ta_data_pos.append(ta)
-
-        return [np.transpose(np.vstack(tr_data_pos)), np.transpose(np.vstack(ta_data_pos))]
+        return np.stack(input_data, axis=2)

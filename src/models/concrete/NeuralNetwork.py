@@ -47,16 +47,16 @@ class NeuralNetwork(FeedForwardPredictionModel):
             # get nextsize as well
             nextsize = structure[k]
             weightindex = str(k - 1)
-            b = self.init_single_weight([nextsize, 1], "b" + weightindex)
+            b = self.init_single_weight([nextsize, 1], "b" + weightindex, True)
             W = self.init_single_weight([nextsize, prevsize], "W" + weightindex)
 
             # next layer
             prevsize = nextsize
             prevtree = W @ tree + b
-            tree = tf.nn.relu(prevtree)
+            tree = tf.maximum(prevtree, 0.1 * prevtree)
 
         # the evaluation model
-        self.eval_model = tf.nn.sigmoid(prevtree)
+        self.eval_model = prevtree
 
         # now create the training graph
         self.y = tf.placeholder(tf.float32, shape=[prevsize, None])
@@ -71,7 +71,8 @@ class NeuralNetwork(FeedForwardPredictionModel):
         self.sess.run(init)
 
     # this method returns a weight matrix with the given shape
-    def init_single_weight(self, shape, name):
+    def init_single_weight(self, shape, name, bias=False):
+        if bias: return tf.Variable(tf.zeros(shape), name=name)
         return tf.Variable(tf.random_normal(shape, mean=0.0, stddev=0.01), name=name)
 
     # this method should be implemented to provide a train method
