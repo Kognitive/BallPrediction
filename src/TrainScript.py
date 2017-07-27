@@ -25,12 +25,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-from src.data_filter.concrete.LowPassFilter import LowPassFilter
 from src.controller.concrete.PathFoldController import PathFoldController
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
-from src.models.concrete.NeuralNetwork import NeuralNetwork
 from src.models.concrete.LSTM import LSTM
-from src.data_normalizer.concrete.FrameNormalizer import FrameNormalizer
 from src.data_normalizer.concrete.IdentityNormalizer import IdentityNormalizer
 from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
 
@@ -42,23 +39,24 @@ data_dir = 'sim_training_data/data_v1'
 normalizer = IdentityNormalizer()
 # normalizer = FrameNormalizer([-5, 5], [-1, 1])
 
-episodes = 100
+episodes = 10000
 batch_size = 1000
-steps = 10
+steps = 3
 
 # define IOK
-I = 20
+I = 23
 
 # define the transformer
 transformer = FeedForwardDataTransformer(I)
 
 # define the model
 # def __init__(self, I, H, C, N, K):
-model = LSTM(3, 20, batch_size)
+model = LSTM(3, 3, 16, 4, I, batch_size, 0.00186)
+# model = RNADE(I + 1, 5, 5, batch_size)
 # model = NeuralNetwork([I * 3] + 3 * [100] + [O * 3], I, O, K)
 
 # d
-NF = 10
+NF = 2
 show_plots = True
 
 # this is the evaluation
@@ -79,7 +77,7 @@ for k in range(NF):
     model.init_params()
     controller = PathFoldController(loader, transformer, model, batch_size, k, NF)
 
-    # get episode and step count from model and train consequentl
+    # get episode and step count from model and train consequently
     error = controller.train(episodes, steps)
     overall_error = overall_error + error
 

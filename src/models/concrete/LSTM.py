@@ -23,230 +23,318 @@
 import numpy as np
 import tensorflow as tf
 
-# import the necessary packages
-from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
 from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 
-# Here we define a basic LSTM network with forget gates, that
-# can be used to make predictions about the time series in the
-# trajectories
+
 class LSTM(RecurrentPredictionModel):
+    """This model represents a LSTM recurrent network. It can
+    be configured in various ways. This concrete implementation
+    features the LSTM with forget gates."""
 
-    # This constructs a new LSTM. You have to supply the input size,
-    # the size of the hidden or state layer and how often it should
-    # be unrolled, e.g. the cropped trajectory size.
-    #
-    # - I: The size of the input
-    # - N: The number of unrolls
-    #
-    def __init__(self, I, N, K):
+    def __init__(self, unique_name, num_input, num_output, num_hidden, num_cells, num_layers, batch_size, minimizer, seed=3):
+        """Constructs a new LSTM.
 
-        # make ther super call here
+        Args:
+            unique_name: Define the unique name of this lstm
+            num_input: The number of input units per step.
+            num_output: The number of output units per step.
+            num_hidden: The number of units in the hidden layer.
+            num_cells: The number of cells per layer
+            num_layers: Define number of time-step unfolds.
+            batch_size: This represents the batch size used for training.
+        """
+
+        # Perform the super call
         super().__init__("LSTM", 1)
 
         # save hyper parameters
-        self.I = I
-        self.N = N
+        self.I = num_input
+        self.O = num_output
+        self.H = num_hidden
+        self.C = num_cells
+        self.N = num_layers
+        self.BS = batch_size
+        self.PH = False
+        self.initializer = tf.random_normal_initializer(0.0, 0.1, seed=seed)
 
-        # create the initial states
-        self.ox = tf.placeholder(tf.float32, [I, N+1, K], name="input_state")
+        with tf.variable_scope(unique_name):
 
-        # split up the input
-        self.target_h = tf.slice(self.ox, [0, 1, 0], [I, N, K])
-        self.x = tf.slice(self.ox, [0, 0, 0], [I, N, K])
-        self.C = tf.zeros([I, 1], tf.float32)
+            # init
+            self.init_common()
 
-        # unstack the input
-        all_x = tf.unstack(self.x, axis=1)
-        h = all_x[0]
-        C = self.C
+            # initialize num_cells different cells
+            for i in range(num_cells):
+                self.init_cell(str(i))
 
-        # create weights
-        weight_list = LSTM.create_weights_for_multiple_layers(I, N)
-        hidden_state_list = list()
+            # --------------------------- TRAINING ----------------------------
 
-        # unfold the cell
-        for x_in in all_x:
+            # create a tensor for the input
+            self.x = tf.placeholder(tf.float32, [self.I, self.N, None], name="input")
+            self.y = tf.placeholder(tf.float32, [self.O, self.N, None], name="target")
+            self.learning_rate = tf.placeholder(tf.float32, [], name="learning_rate")
 
-            # create a cell
-            h, C = LSTM.create_lstm_cell(weight_list, x_in, h, C)
-            hidden_state_list.append(h)
+            # define the memory state
+            # self.h = tf.slice(self.x, [0, 0, 0], [self.I, self.N, 1])
+            self.h = tf.zeros([self.H * self.C, 1], tf.float32)
+            self.s = tf.zeros([self.H * self.C, 1], tf.float32)
 
-        # the final states
-        self.h = tf.stack(hidden_state_list, axis=1)
+            # unstack the input
+            unstacked_x = tf.unstack(self.x, axis=1)
 
-        # So far we have got the model
-        self.error = 0.5 * tf.reduce_mean(tf.reduce_sum(tf.pow(self.target_h - self.h, 2), axis=0))
-        self.minimizer = tf.train.AdamOptimizer().minimize(self.error)
+            # use for dynamic
+            s = self.s
+            h = self.h
 
-        # here comes the step model
-        self.step_h = tf.placeholder(tf.float32, [I, 1], name="h")
-        self.step_x = tf.placeholder(tf.float32, [I, 1], name="x")
-        self.step_C = tf.placeholder(tf.float32, [I, 1], name="C")
+            # create weights
+            outputs = list()
 
-        # the model
-        self.step_out_h, self.step_out_C = LSTM.create_lstm_cell(weight_list, self.step_x, self.step_h, self.step_C)
+            # unfold the cell
+            for x_in in unstacked_x:
+
+                # create a cell
+                y, h, s = self.create_combined_lstm_cell(x_in, h, s)
+                outputs.append(y)
+
+            # the final states
+            self.target_y = tf.stack(outputs, axis=1)
+
+            # So far we have got the model
+            self.error = 0.5 * tf.reduce_mean(tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0))
+            self.minimizer = minimizer(self.learning_rate).minimize(self.error)
+
+            # ------------------------------ EVALUATION ---------------------------------
+
+            # here comes the step model
+            self.step_x = tf.placeholder(tf.float32, [self.I, 1], name="step_x")
+            self.step_h = tf.placeholder(tf.float32, [self.H * self.C, 1], name="step_h")
+            self.step_s = tf.placeholder(tf.float32, [self.H * self.C, 1], name="step_s")
+
+            # the model
+            self.step_y, self.step_out_h, self.step_out_s = self.create_combined_lstm_cell(self.step_x, self.step_h, self.step_s)
 
         # state vars
-        self.current_h = np.zeros([I, 1])
-        self.current_C = np.zeros([I, 1])
+        self.current_h = np.zeros([self.H * self.C, 1])
+        self.current_s = np.zeros([self.H * self.C, 1])
 
         # init the global variables initializer
+        tf.set_random_seed(4)
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
         self.sess.run(init)
 
-    # This method can be used to initialize a single weight according to
-    # its shape. In addition you have to give the weight a name, so it
-    # can be matched inside of the graph.
-    #
-    # - shape: The shape of the variable to create
-    # - name: The name of the variable to create
-    #
-    @staticmethod
-    def create_single_weight(shape, name):
-        return tf.Variable(tf.random_normal(shape, mean=0.0, stddev=0.005), name=name)
+    def init_common(self):
+        """This initializes the common variables.
+        """
+        with tf.variable_scope("common", reuse=None, ):
+            tf.get_variable("O", [self.O, self.H * self.C], dtype=tf.float32,
+                            initializer=self.initializer)
 
-    # This method can be used to create the weights for one fully-connected layer.
-    #
-    # - I: The size of the input
-    # - C: The unique number of the layer
-    #
-    @staticmethod
-    def create_weights_for_layer(I, C):
+    def init_cell(self, name):
+        """This method creates the parameters for a cell with
+        the given name
 
-        # define the names of the weights
-        name_W = "W" + str(C)
-        name_R = "R" + str(C)
-        name_p = "p" + str(C)
-        name_b = "b" + str(C)
+        Args:
+            name: The name for this cell, e.g. 1
+        """
+        with tf.variable_scope(name, reuse=None):
 
-        # sample weights in the appropriate sizes
-        W = LSTM.create_single_weight([I, I], name_W)
-        R = LSTM.create_single_weight([I, I], name_R)
-        p = LSTM.create_single_weight([I, 1], name_p)
-        b = LSTM.create_single_weight([I, 1], name_b)
+            # init the layers appropriately
+            self.init_layer("forget_gate")
+            self.init_layer("output_gate")
+            self.init_layer("input_gate")
+            self.init_layer("input_node")
 
-        # and pass them back
-        return [W, R, p, b]
+    def init_layer(self, name):
+        """This method initializes the weights for a layer with the
+        given name.
 
-    # This method creates weights for multiple layers and
-    # combines them in one list.
-    #
-    # - I: The size of the input
-    # - O: The size of the output
-    # - N: The numbers of layers to create
-    #
-    @staticmethod
-    def create_weights_for_multiple_layers(I, N):
+        Args:
+            name: The name of the layer.
+        """
 
-        # iterate N-times and each time append one weight
-        # pair to the result list
-        all_weights = list()
-        for k in range(N):
-            all_weights.append(LSTM.create_weights_for_layer(I, k))
+        with tf.variable_scope(name, reuse=None):
 
-        return all_weights
+            # The input to the layer unit
+            tf.get_variable("W", [self.H, self.I], dtype=tf.float32, initializer=self.initializer)
+            tf.get_variable("R", [self.H, self.H * self.C], dtype=tf.float32, initializer=self.initializer)
+            tf.get_variable("b", [self.H, 1], dtype=tf.float32, initializer=self.initializer)
 
-    # This method creates weights for a specific number of layers. In
-    # addition you have to supply it with the number of parameters.
-    @staticmethod
-    def create_layer(activation, weights, x, h, C=0):
-        [W, R, p, b] = weights
-        if C != 0: return activation(W @ x + R @ h + np.multiply(p, C) + b)
-        else: return activation(W @ x + R @ h + b)
+            # when a peephole is needed
+            if self.PH:
+                tf.get_variable("p", [self.H, 1], dtype=tf.float32, initializer=self.initializer)
 
-    # This method creates a LSTM cell, using the supplied input and
-    # hidden state. It basically integrates the standard LSTM
-    # architecture with forget gates.
-    @staticmethod
-    def create_lstm_cell(weight_list, x, h, C):
+    def create_layer(self, name, activation, x, h, s):
+        """This method creates one layer, it therefore needs a activation
+        function, the name as well as the inputs to the layer.
 
-        # create all gate layers
-        forget_gate = LSTM.create_layer(tf.sigmoid, weight_list[0], x, h, C)
-        input_gate = LSTM.create_layer(tf.sigmoid, weight_list[1], x, h, C)
-        input_data_gate = LSTM.create_layer(tf.tanh, weight_list[2], x, h)
+        Args:
+            name: The name of this layer
+            activation: The activation to use.
+            x: The input state
+            h: The hidden state from the previous layer.
+            s: The memory state from the previous layer.
 
-        # update input gate
-        input_gate = tf.multiply(input_gate, input_data_gate)
+        Returns:
+            The output for this layer
+        """
 
-        # now we build up the complete cell
-        forgotten_memory = tf.multiply(forget_gate, C)
-        new_C = tf.add(input_gate, forgotten_memory)
+        with tf.variable_scope(name, reuse=True):
 
-        # memory gate
-        memory_gate = LSTM.create_layer(tf.sigmoid, weight_list[3], x, h, new_C)
+            # The input to the layer unit
+            W = tf.get_variable("W")
+            R = tf.get_variable("R")
+            b = tf.get_variable("b")
 
-        # now we can construct the outputs for this cell
-        new_h = tf.multiply(memory_gate, LSTM.lrelu_activation(new_C))
+            # create the term
+            term = W @ x + R @ h + b
+
+            # if a peephole should be included
+            if self.PH:
+                p = tf.get_variable("p")
+                term += tf.multiply(p, s)
+
+            # create the variables only the first times
+            return activation(term)
+
+    def create_lstm_cell(self, name, x, h, s):
+        """This method creates a LSTM cell. It basically uses the
+        previously initialized weights.
+
+        Args:
+            x: The input to the layer.
+            h: The hidden input to the layer.
+            s: The input memory vector to this cell.
+
+        Returns:
+            new_h: The new hidden vector
+            new_s: The new memory vector
+        """
+        with tf.variable_scope(name, reuse=True):
+
+            # create all gate layers
+            forget_gate = self.create_layer("forget_gate", tf.sigmoid, x, h, s)
+            output_gate = self.create_layer("output_gate", tf.sigmoid, x, h, s)
+            input_gate = self.create_layer("input_gate", tf.sigmoid, x, h, s)
+            input_node = self.create_layer("input_node", tf.tanh, x, h, s)
+
+            # update input gate
+            input_gate = tf.multiply(input_gate, input_node)
+            forgotten_memory = tf.multiply(forget_gate, s)
+
+            # calculate the new s
+            new_s = tf.add(input_gate, forgotten_memory)
+            new_h = tf.multiply(output_gate, LSTM.relu_activation(new_s))
 
         # pass back both states
-        return new_h, new_C
+        return new_h, new_s
 
-    # This method creates a lrelu activation function.
+    def create_combined_lstm_cell(self, x, h, s):
+        """This method creates a combined lstm cell. It basically
+        connects them appropriately.
+
+        Args:
+            x: The input vector to the cell (self.I)
+            h: The hidden vector (self.I * self.num_cells)
+            s: A list of all state vectors.
+
+        Returns:
+            Tuple(y, h, s), where y is the predicted output,
+            h is the hidden vector for all cells
+            s is the list of memory vectors.
+        """
+
+        # create all cells
+        all_new_s = list()
+        all_new_h = list()
+        for k in range(self.C):
+            new_h, new_s = self.create_lstm_cell(str(k), x, h, tf.slice(s, [k * self.H, 0], [self.H, 1]))
+            all_new_s.append(new_s)
+            all_new_h.append(new_h)
+
+        # stack the hidden vectors
+        all_new_h = tf.concat(all_new_h, 0)
+        all_new_s = tf.concat(all_new_s, 0)
+
+        # create the output
+        with tf.variable_scope("common", reuse=True):
+            O = tf.get_variable("O")
+            y = O @ all_new_h
+
+        # pass back the cell outputs
+        return y, all_new_h, all_new_s
+
     @staticmethod
-    def lrelu_activation(x):
-        return tf.maximum(x, 0.1 * x)
+    def relu_activation(x):
+        """This method creates a leaky relu function.
 
-    # This method defines the current h as the first position
+        Args:
+            x: The input to the layer
+
+        Returns:
+            The layer after the activation is applied.
+        """
+
+        return tf.maximum(x, 0)
+
     def init_step(self, x):
+        """This method is required to set the initial hidden state."""
         self.current_h = x
 
-    # This method performs one step using the learned model.
     def step(self, x):
-        [self.current_h, self.current_C] = \
-            self.sess.run([self.step_out_h, self.step_out_C],
-                          feed_dict={self.step_x: x, self.step_h: self.current_h, self.step_C: self.current_C})
+        """This method can be used to perform a step on the model.
 
-        return self.current_h
+        Args:
+            x: The input at the current step.
 
-    # This method retrieves a list of trajectories. It can further
-    # process or transform these trajectories. But the desired overall
-    # behaviour is, that it should use the passed trajectories as training
-    # data and thus adjust the parameters of the model appropriately.
-    #
-    # trajectories - This is a list of trajectories (A trajectory is a numpy vector)
-    # steps - The number of steps the model should execute.
-    #
-    def train(self, trajectories, steps):
+        Returns:
+            The result obtained from exploiting the inner model.
+        """
+        [res, self.current_h, self.current_s] = \
+            self.sess.run([self.step_y, self.step_out_h, self.step_out_s],
+                          feed_dict={self.step_x: x, self.step_h: self.current_h, self.step_s: self.current_s})
+
+        return res
+
+    def train(self, trajectories, steps, learning_rate):
+        """This method retrieves a list of trajectories. It can further
+        process or transform these trajectories. But the desired overall
+        behaviour is, that it should use the passed trajectories as training
+        data and thus adjust the parameters of the model appropriately.
+
+        Args:
+            trajectories: This is a list of trajectories (A trajectory is a numpy vector)
+            steps: The number of steps the model should execute.
+            learning_rate: The learning rate for this step
+        """
+
+        # sample them randomly according to the batch size
+        slices = np.random.randint(0, np.size(trajectories, 2), self.BS)
+        traj = trajectories[:, :-1, slices]
+        target = trajectories[:, 1:, slices]
 
         # we want to perform n steps
         for k in range(steps):
-            self.sess.run(self.minimizer, feed_dict={self.ox: trajectories})
+            self.sess.run(self.minimizer, feed_dict={self.x: traj, self.y: target, self.learning_rate: learning_rate})
 
-    # This method gets a the current state, and tries to output its prediction.
-    #
-    # - trajectories This is basically one state, e.g. a x-y-z position
-    #
     def validate(self, trajectories):
+        """This method basically validates the passed trajectories.
+        It therefore splits them up so that the future frame get passed as the target.
 
-        return self.sess.run(self.error, feed_dict={self.ox: trajectories})
+        Args:
+            trajectories: The trajectories to use for validation.
 
-        # # evaluate the error for all trajectories
-        # error = 0
-        # for trajectory in trajectories:
-        #     print("Hs")
-        #     # reset the current c
-        #     self.current_C = np.zeros([self.I, 1])
-        #     prediction = self.current_h
-        #
-        #     # transposed trajectory
-        #     ttrajectory = np.transpose(trajectory)
-        #     self.current_h = ttrajectory[:, 0:1]
-        #
-        #     # execute the steps
-        #     for n in range(0, np.size(ttrajectory, 1)):
-        #
-        #         # add the error for the prediction
-        #         x = ttrajectory[:, n:n+1]
-        #         diff = prediction - x
-        #         error += np.outer(diff, diff)
-        #
-        #         # one step in the model
-        #         prediction = self.step(x)
+        Returns:
+            The error on the passed trajectories
+        """
+        traj = trajectories[:, :-1, :]
+        target = trajectories[:, 1:, :]
 
+        return self.sess.run(self.error, feed_dict={self.x: traj, self.y: target})
 
-    # This method sh
     def init_params(self):
+        """This initializes the parameters."""
         init = tf.global_variables_initializer()
         self.sess.run(init)
+
+    def reset(self):
+        tf.reset_default_graph()

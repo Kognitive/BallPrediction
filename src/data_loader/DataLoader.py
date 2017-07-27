@@ -19,6 +19,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import numpy as np
 
 from src.data_filter.DataFilter import DataFilter
 from src.data_filter.concrete.IdentityDataFilter import IdentityDataFilter
@@ -54,7 +55,6 @@ class DataLoader:
         # if the data is not loaded already, reload it.
         if not self.loaded:
 
-            print(40 * "-")
             print("Started to fetch data from HD")
 
             d = self.load_data()
@@ -62,6 +62,7 @@ class DataLoader:
 
             self.loaded = True
             self.data = [self.normalizer.normalize(x) for x in self.filter.filter(d)]
+            self.data = [np.random.randn(np.size(x, 0), np.size(x, 1)) * 0.01 + x for x in self.data]
             self.size = len(self.data)
             print("Normalized and filtered the data.")
 

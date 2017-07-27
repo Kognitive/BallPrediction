@@ -20,20 +20,30 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# This abstract class represents a PredictionModel. The methods need to be implemented,
-# so the model can be used, to predict the ball position correctly.
+import tensorflow as tf
 
+class GaussianMixtureModel:
 
-class RecurrentPredictionModel:
+    # Here we create the initial Gaussian Mixture Model used for Prediction
+    def __init__(self, I, NH, K):
 
-    # This constructs the prediction model
-    #
-    # name - The name of the model
-    # K - The offset for the prediction
-    #
-    def __init__(self, name, K):
-        self.name = name
-        self.K = K
+        # define the two placeholder for the model
+        x_pred = tf.placeholder(tf.float32, [I, None], name="x_pred")
+        x_hist = tf.placeholder(tf.float32, [I, NH, None], name="x_hist")
+
+        # create the result, which is initially zero
+        model = tf.constant(0.0, tf.float32)
+
+        # repeat for K times
+        for k in range(K):
+            pi_k = tf.get_variable("pi" + str(k), [1], tf.float32)
+            mu_k = tf.get_variable("mu" + str(k), [NH + 1], tf.float32)
+            sigma_k = tf.get_variable("sigma" + str(k), [NH + 1, NH + 1], tf.float32)
+            gauss = tf.contrib.distributions.MultivariateNormalDiag(mu_k, sigma_k)
+            model *= pi_k * gauss
+
+        self.nll = -tf.log(model)
+        self.trainer = tf.train.AdamOptimizer(self.nll).minimize()
 
     # This method retrieves a list of trajectories. It can further
     # process or transform these trajectories. But the desired overall
@@ -43,7 +53,7 @@ class RecurrentPredictionModel:
     # trajectories - This is a list of trajectories (A trajectory is a numpy vector)
     # steps - The number of steps the model should execute.
     #
-    def train(self, trajectories, steps, learning_rate):
+    def train(self, trajectories, steps):
         raise NotImplementedError("Please implement a training method for " + str(self.name))
 
     # This method gets a the current state, and tries to output its prediction.

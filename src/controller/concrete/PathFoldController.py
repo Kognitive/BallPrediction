@@ -28,6 +28,7 @@ from src.controller.TrainingController import TrainingController
 from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 from src.data_loader.DataLoader import DataLoader
 from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
+from src.plots.LivePlot import LivePlot
 
 # this class is a basic controller
 from src.utils.Progressbar import Progressbar
@@ -99,10 +100,12 @@ class PathFoldController(TrainingController):
         print("Training started:")
 
         # for each episode
-        eval_res = np.empty([2, num_episodes])
+        eval_res = np.zeros([2, num_episodes])
 
         # define progressbar length
         pbar = Progressbar(num_episodes, progressbar_len)
+        lv = LivePlot()
+        lv.update_plot(0, eval_res[0, :], eval_res[1, :])
 
         # execute episodes
         for episode in range(num_episodes):
@@ -110,16 +113,22 @@ class PathFoldController(TrainingController):
             # progress by one with the bar
             pbar.progress()
 
-            # sample the randomly
-            slices = np.random.randint(0, np.size(self.T, 2), self.batch_size)
-
             # simply perform a step with the model
-            self.M.train(self.T[:, :, slices], num_steps)
+            self.M.train(self.T, num_steps)
 
             # save the evaluation result
-            eval_res[0, episode] = self.validation_error()
-            eval_res[1, episode] = self.train_error()
+            # v = self.validation_error()
+            # t = self.train_error()
 
+            # print("val: " + str(v))
+            # print("train: " + str(t))
+
+            # eval_res[0, episode] = v
+            # eval_res[1, episode] = t
+
+            lv.update_plot(episode, eval_res[0, :], eval_res[1, :])
+
+        lv.close()
         print()
         print(progressbar_len * "-")
 
@@ -128,24 +137,10 @@ class PathFoldController(TrainingController):
     # this method evaluates the error on the validation set
     def validation_error(self):
 
-        overall_error = 0
-        N = int(np.size(self.V, 2) / self.batch_size)
-
-        # make packages
-        for k in range(N):
-
-            overall_error += self.M.validate(self.V[:, :, (k*self.batch_size):((k+1)*self.batch_size)])
-
-        return overall_error
+        return self.M.validate(self.V)
 
     # this method evaluates the error on the validation set
     def train_error(self):
 
-        overall_error = 0
-        N = int(np.size(self.V, 2) / self.batch_size)
+            return self.M.validate(self.T)
 
-        # make packages
-        for k in range(N):
-            overall_error += self.M.validate(self.T[:, :, (k * self.batch_size):((k + 1) * self.batch_size)])
-
-        return overall_error
