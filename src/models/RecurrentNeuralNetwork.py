@@ -216,7 +216,11 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         Returns:
             The result obtained from exploiting the inner model.
         """
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> 8fa581a678a7da78a9ecaa6fe659574c8cb79940
         dic = dict(zip(self.step_h, self.current_h))
         dic.update({self.step_x: x})
         res = self.sess.run(self.step_y, dic)
