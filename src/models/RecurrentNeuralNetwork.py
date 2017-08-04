@@ -77,7 +77,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             unstacked_x = tf.unstack(self.x, axis=1)
 
             # use for dynamic
-            h = self.get_initial_h_node()
+            h = self.get_initial_h()
 
             # create weights
             outputs = list()
@@ -114,19 +114,19 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         self.sess = tf.Session()
         self.sess.run(init)
 
-    def get_h():
+    def get_h(self):
         """Gets a reference to the step h."""
         raise NotImplementedError("Get the current h")
 
-    def get_initial_h():
+    def get_initial_h(self):
         """Gets a reference to the step h."""
         raise NotImplementedError("Get the current initial h")
 
-    def get_step_h():
+    def get_step_h(self):
         """Retrieve the step h"""
         raise NotImplementedError("Retrieve the step hidden state.")
 
-    def get_current_h():
+    def get_current_h(self):
         """Deliver current h"""
         raise NotImplementedError("Retrieve the current hidden state.")
 
@@ -145,7 +145,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """
         raise NotImplementedError("Please implement init_cell")
 
-    def create_cell(self, name, x, h):
+    def create_cell(self, name, x, h, num_cell):
         """This method creates a RNN cell. It basically uses the
         previously initialized weights.
 
@@ -169,25 +169,26 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # create all cells
         all_length = len(h)
-        all_new_h = list(all_length)
+        all_new_h = list()
+        [all_new_h.append(list()) for k in range(all_length)]
 
         for k in range(self.C):
-            new_h = self.create_lstm_cell(str(k), x, h)
+            new_h = self.create_cell(str(k), x, h, k)
 
             # append it to each list
-            for l in range(all_length)
+            for l in range(all_length):
                 all_new_h[l].append(new_h[l])
 
-        # stack the hidden vectors
-        all_new_h = [tf.concat(comb_new_h), 0) for comb_new_h in all_new_h]
+        # concat all h
+        concat_new_h = [tf.concat(comb_new_h, 0) for comb_new_h in all_new_h]
 
         # create the output
         with tf.variable_scope("common", reuse=True):
             O = tf.get_variable("O")
-            y = O @ all_new_h[0]
+            y = O @ concat_new_h[0]
 
         # pass back the cell outputs
-        return y, all_new_h
+        return y, concat_new_h
 
     @staticmethod
     def lrelu_activation(x):
@@ -216,18 +217,14 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         Returns:
             The result obtained from exploiting the inner model.
         """
-<<<<<<< HEAD
 
-=======
-
->>>>>>> 8fa581a678a7da78a9ecaa6fe659574c8cb79940
         dic = dict(zip(self.step_h, self.current_h))
         dic.update({self.step_x: x})
         res = self.sess.run(self.step_y, dic)
         self.current_h = self.sess.run(self.step_out_h, dic)
 
         return res
-raise NotImplementedError("Get the current h")
+
     def train(self, trajectories, steps, learning_rate):
         """This method retrieves a list of trajectories. It can further
         process or transform these trajectories. But the desired overall

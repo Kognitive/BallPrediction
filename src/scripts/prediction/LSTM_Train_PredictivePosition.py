@@ -28,6 +28,7 @@ import tensorflow as tf
 from src.controller.concrete.PathFoldController import PathFoldController
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
 from src.models.concrete.LSTM import LSTM
+from src.models.concrete.GatedRecurrentUnit import GatedRecurrentUnit
 from src.utils.Progressbar import Progressbar
 from src.plots.LivePlot import LivePlot
 from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
@@ -50,9 +51,9 @@ show_plots = True
 
 # Model settings
 in_out_size = 3
-unrolls = 20
-hidden_cells = 3
-memory_size = 5
+unrolls = 40
+hidden_cells = 5
+memory_size = 20
 
 # ------------------------ SCRIPT -------------------------
 
@@ -62,7 +63,8 @@ print(line)
 print("Creating Model")
 
 # define the model using the parameters from top
-model = LSTM(in_out_size, in_out_size, memory_size, hidden_cells, unrolls, batch_size, tf.train.RMSPropOptimizer)
+# model = LSTM("ed", in_out_size, in_out_size, memory_size, hidden_cells, unrolls, batch_size, tf.train.RMSPropOptimizer)
+model = GatedRecurrentUnit("GRU", in_out_size, in_out_size, memory_size, hidden_cells, unrolls, batch_size, tf.train.RMSPropOptimizer)
 model.init_params()
 print(line)
 
@@ -86,7 +88,7 @@ overall_error = np.zeros([2, episodes])
 
 # some debug printing
 print(line)
-print("Model: LSTM(" + str(in_out_size) + ", " + str(in_out_size) + ", " + str(memory_size) + ", "
+print("Model: GRU(" + str(in_out_size) + ", " + str(in_out_size) + ", " + str(memory_size) + ", "
       + str(hidden_cells) + ", " + str(unrolls) + ", " + str(batch_size) + ")")
 print(line)
 

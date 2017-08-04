@@ -45,25 +45,31 @@ class LSTM(RecurrentNeuralNetwork):
         """
 
         # Perform the super call
+        self.PH = False
         super().__init__(unique_name, num_input, num_output, num_hidden, num_cells, num_layers, batch_size, minimizer, seed)
 
-    def get_h():
+    def get_h(self):
         """Gets a reference to the step h."""
-        return [tf.zeros([self.H * self.C, 1], tf.float32),
-                tf.zeros([self.H * self.C, 1], tf.float32)]
+        h = tf.zeros([self.H * self.C, 1], tf.float32)
+        s = tf.zeros([self.H * self.C, 1], tf.float32)
+        return [h, s]
 
-    def get_initial_h():
+
+    def get_initial_h(self):
         """Gets a reference to the step h."""
         return self.h
 
-    def get_step_h():
+    def get_step_h(self):
         """Retrieve the step h"""
-        raise [tf.placeholder(tf.float32, [self.H * self.C, 1], name="step_h"),
-               tf.placeholder(tf.float32, [self.H * self.C, 1], name="step_h")]
+        h = tf.placeholder(tf.float32, [self.H * self.C, 1], name="step_h")
+        s = tf.placeholder(tf.float32, [self.H * self.C, 1], name="step_s")
+        return [h, s]
 
-    def get_current_h():
+    def get_current_h(self):
         """Deliver current h"""
-        return [np.zeros([self.H * self.C, 1]), np.zeros([self.H * self.C, 1])]
+        h = np.zeros([self.H * self.C, 1])
+        s = np.zeros([self.H * self.C, 1])
+        return [h, s]
 
     def init_layer(self, name):
         """This method initializes the weights for a layer with the
@@ -132,7 +138,7 @@ class LSTM(RecurrentNeuralNetwork):
             self.init_layer("input_gate")
             self.init_layer("input_node")
 
-    def create_cell(self, name, x, h_state):
+    def create_cell(self, name, x, h_state, num_cell):
         """This method creates a LSTM cell. It basically uses the
         previously initialized weights.
 
@@ -148,18 +154,18 @@ class LSTM(RecurrentNeuralNetwork):
         with tf.variable_scope(name, reuse=True):
 
             # create all gate layers
-            forget_gate = self.create_layer("forget_gate", tf.sigmoid, x, h, s)
-            output_gate = self.create_layer("output_gate", tf.sigmoid, x, h, s)
-            input_gate = self.create_layer("input_gate", tf.sigmoid, x, h, s)
-            input_node = self.create_layer("input_node", tf.tanh, x, h, s)
+            forget_gate = self.create_layer("forget_gate", tf.sigmoid, x, h_state)
+            output_gate = self.create_layer("output_gate", tf.sigmoid, x, h_state)
+            input_gate = self.create_layer("input_gate", tf.sigmoid, x, h_state)
+            input_node = self.create_layer("input_node", tf.tanh, x, h_state)
 
             # update input gate
             input_gate = tf.multiply(input_gate, input_node)
-            forgotten_memory = tf.multiply(forget_gate, s)
+            forgotten_memory = tf.multiply(forget_gate, tf.slice(s, [self.H * num_cell, 0], [self.H, 1]))
 
             # calculate the new s
             new_s = tf.add(input_gate, forgotten_memory)
-            new_h = tf.multiply(output_gate, LSTM.relu_activation(new_s))
+            new_h = tf.multiply(output_gate, LSTM.lrelu_activation(new_s))
 
         # pass back both states
         return [new_h, new_s]
