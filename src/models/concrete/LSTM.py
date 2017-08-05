@@ -31,27 +31,36 @@ class LSTM(RecurrentNeuralNetwork):
     be configured in various ways. This concrete implementation
     features the LSTM with forget gates."""
 
-    def __init__(self, unique_name, num_input, num_output, num_hidden, num_cells, num_layers, batch_size, minimizer, seed=3):
+    def __init__(self, config):
         """Constructs a new LSTM.
 
         Args:
-            unique_name: Define the unique name of this lstm
-            num_input: The number of input units per step.
-            num_output: The number of output units per step.
-            num_hidden: The number of units in the hidden layer.
-            num_cells: The number of cells per layer
-            num_layers: Define number of time-step unfolds.
-            batch_size: This represents the batch size used for training.
+            config: The configuration parameters
+                unique_name: Define the unique name of this lstm
+                num_input: The number of input units per step.
+                num_output: The number of output units per step.
+                num_hidden: The number of units in the hidden layer.
+                num_cells: The number of cells per layer
+                num_layers: Define number of time-step unfolds.
+                batch_size: This represents the batch size used for training.
+                minimizer: Select the appropriate minimizer
+                seed: Represents the seed for this model
+                momentum: The momentum if the minimizer is momentum
+                lr_rate: The initial learning rate
+                lr_decay_steps: The steps until a decay should happen
+                lr_decay_rate: How much should the learning rate be reduced
+                peephole: True, if peephole connections should be used
         """
 
         # Perform the super call
-        self.PH = False
-        super().__init__(unique_name, num_input, num_output, num_hidden, num_cells, num_layers, batch_size, minimizer, seed)
+        config['unique_name'] = "LSTM_" + config['unique_name']
+        super().__init__(config)
 
     def get_h(self):
         """Gets a reference to the step h."""
-        h = tf.zeros([self.H * self.C, 1], tf.float32)
-        s = tf.zeros([self.H * self.C, 1], tf.float32)
+        size = self.config['num_hidden'] * self.config['num_cells']
+        h = tf.zeros([size, 1], tf.float32)
+        s = tf.zeros([size, 1], tf.float32)
         return [h, s]
 
 
@@ -61,14 +70,16 @@ class LSTM(RecurrentNeuralNetwork):
 
     def get_step_h(self):
         """Retrieve the step h"""
-        h = tf.placeholder(tf.float32, [self.H * self.C, 1], name="step_h")
-        s = tf.placeholder(tf.float32, [self.H * self.C, 1], name="step_s")
+        size = self.config['num_hidden'] * self.config['num_cells']
+        h = tf.placeholder(tf.float32, [size, 1], name="step_h")
+        s = tf.placeholder(tf.float32, [size, 1], name="step_s")
         return [h, s]
 
     def get_current_h(self):
         """Deliver current h"""
-        h = np.zeros([self.H * self.C, 1])
-        s = np.zeros([self.H * self.C, 1])
+        size = self.config['num_hidden'] * self.config['num_cells']
+        h = np.zeros([size, 1])
+        s = np.zeros([size, 1])
         return [h, s]
 
     def init_layer(self, name):
@@ -81,16 +92,21 @@ class LSTM(RecurrentNeuralNetwork):
 
         with tf.variable_scope(name, reuse=None):
 
+            # short form
+            H = self.config['num_hidden']
+            I = self.config['num_input']
+            C = self.config['num_cells']
+
             # The input to the layer unit
-            tf.get_variable("W", [self.H, self.I], dtype=tf.float32, initializer=self.initializer)
-            tf.get_variable("R", [self.H, self.H * self.C], dtype=tf.float32, initializer=self.initializer)
-            tf.get_variable("b", [self.H, 1], dtype=tf.float32, initializer=self.initializer)
+            tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.initializer)
+            tf.get_variable("R", [H, H * C], dtype=tf.float32, initializer=self.initializer)
+            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.initializer)
 
             # when a peephole is needed
-            if self.PH:
-                tf.get_variable("p", [self.H, 1], dtype=tf.float32, initializer=self.initializer)
+            if self.config['peephole']:
+                tf.get_variable("p", [H, 1], dtype=tf.float32, initializer=self.initializer)
 
-    def create_layer(self, name, activation, x, h_state):
+    def create_layer(self, name, activation, x, h, s):
         """This method creates one layer, it therefore needs a activation
         function, the name as well as the inputs to the layer.
 
@@ -98,12 +114,12 @@ class LSTM(RecurrentNeuralNetwork):
             name: The name of this layer
             activation: The activation to use.
             x: The input state
-            h_state: The hidden state from the previous layer.
+            h: The hidden state from the previous layer.
+            s: The memory state of this layer
 
         Returns:
             The output for this layer
         """
-        [h, s] = h_state
 
         with tf.variable_scope(name, reuse=True):
 
@@ -116,7 +132,7 @@ class LSTM(RecurrentNeuralNetwork):
             term = W @ x + R @ h + b
 
             # if a peephole should be included
-            if self.PH:
+            if self.config['peephole']:
                 p = tf.get_variable("p")
                 term += tf.multiply(p, s)
 
@@ -153,15 +169,17 @@ class LSTM(RecurrentNeuralNetwork):
 
         with tf.variable_scope(name, reuse=True):
 
+            sliced_s = tf.slice(s, [self.config['num_hidden'] * num_cell, 0], [self.config['num_hidden'], 1])
+
             # create all gate layers
-            forget_gate = self.create_layer("forget_gate", tf.sigmoid, x, h_state)
-            output_gate = self.create_layer("output_gate", tf.sigmoid, x, h_state)
-            input_gate = self.create_layer("input_gate", tf.sigmoid, x, h_state)
-            input_node = self.create_layer("input_node", tf.tanh, x, h_state)
+            forget_gate = self.create_layer("forget_gate", tf.sigmoid, x, h, sliced_s)
+            output_gate = self.create_layer("output_gate", tf.sigmoid, x, h, sliced_s)
+            input_gate = self.create_layer("input_gate", tf.sigmoid, x, h, sliced_s)
+            input_node = self.create_layer("input_node", tf.tanh, x, h, sliced_s)
 
             # update input gate
             input_gate = tf.multiply(input_gate, input_node)
-            forgotten_memory = tf.multiply(forget_gate, tf.slice(s, [self.H * num_cell, 0], [self.H, 1]))
+            forgotten_memory = tf.multiply(forget_gate, sliced_s)
 
             # calculate the new s
             new_s = tf.add(input_gate, forgotten_memory)

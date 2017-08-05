@@ -29,6 +29,7 @@ from src.controller.concrete.PathFoldController import PathFoldController
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
 from src.models.concrete.LSTM import LSTM
 from src.models.concrete.GatedRecurrentUnit import GatedRecurrentUnit
+from src.models.concrete.RecurrentHighWayNetwork import RecurrentHighWayNetwork
 from src.utils.Progressbar import Progressbar
 from src.plots.LivePlot import LivePlot
 from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
@@ -41,35 +42,38 @@ loader = SimDataLoader(data_dir)
 line_length = 80
 
 # Training parameters
-learning_rate = 0.01
-learning_threshold = 15
 episodes = 1000
 batch_size = 100
 steps_per_episode = 100
 steps_per_batch = 1
 show_plots = True
 
-# Model settings
-in_out_size = 3
-unrolls = 40
-hidden_cells = 5
-memory_size = 20
-
 # ------------------------ SCRIPT -------------------------
 
 # define the line length for printing
 line = line_length * "-"
-print(line)
-print("Creating Model")
 
-# define the model using the parameters from top
-# model = LSTM("ed", in_out_size, in_out_size, memory_size, hidden_cells, unrolls, batch_size, tf.train.RMSPropOptimizer)
-model = GatedRecurrentUnit("GRU", in_out_size, in_out_size, memory_size, hidden_cells, unrolls, batch_size, tf.train.RMSPropOptimizer)
-model.init_params()
-print(line)
+# create the configuration
+choosen_model = LSTM
+config = {}
+config['unique_name'] = "1"
+config['num_input'] = 3
+config['num_output'] = 3
+config['num_hidden'] = 20
+config['num_cells'] = 3
+config['num_layers'] = 20
+config['batch_size'] = batch_size
+config['seed'] = 3
+config['minimizer'] = 'momentum'
+config['momentum'] = 0.95
+config['lr_rate'] = 0.01
+config['lr_decay_steps'] = 1000
+config['lr_decay_rate'] = 0.9
+config['peephole'] = True
+config['recurrence_depth'] = 6
 
 # create the transformer
-transformer = FeedForwardDataTransformer(unrolls)
+transformer = FeedForwardDataTransformer(config['num_layers'])
 
 # load trajectories, split them up and transform them
 trajectories = loader.load_complete_data()
@@ -81,15 +85,27 @@ slices_tr = permutation[num:]
 validation_set = transformer.transform([trajectories[i] for i in slices_va])
 training_set = transformer.transform([trajectories[i] for i in slices_tr])
 
+# define the size of training and validation set
+config['tr_size'] = np.size(training_set, 2)
+config['va_size'] = np.size(validation_set, 2)
+
+print(line)
+print("Creating Model")
+# define the model using the parameters from top
+model = choosen_model(config)
+model.init_params()
+print("Uploading Data")
+
+# upload the data
+print(line)
+
 # define the overall error
 validation_error = np.zeros(episodes)
 train_error = np.zeros(episodes)
 overall_error = np.zeros([2, episodes])
 
 # some debug printing
-print(line)
-print("Model: GRU(" + str(in_out_size) + ", " + str(in_out_size) + ", " + str(memory_size) + ", "
-      + str(hidden_cells) + ", " + str(unrolls) + ", " + str(batch_size) + ")")
+print("Model: " + model.name)
 print(line)
 
 # create progressbar
@@ -107,23 +123,19 @@ for episode in range(episodes):
     for step in range(steps_per_episode):
 
         # train the model
-        model.train(training_set, steps_per_batch, learning_rate)
+        model.train(training_set, steps_per_batch)
 
     # calculate validation error
     validation_error[episode] = model.validate(validation_set)
-    # train_error[episode] = model.validate(training_set)
+    train_error[episode] = model.validate(training_set)
 
     # check if we have to update our best error
     if best_val_error > validation_error[episode]:
         best_episode = episode
         best_val_error = validation_error[episode]
 
-    # when the offset between the current is to high
-    if episode - best_episode > learning_threshold:
-        learning_rate /= 5
-
     # update progressbar
     p_bar.progress()
-    lv.update_plot(episode, validation_error)
+    lv.update_plot(episode, validation_error, train_error)
 
 lv.close()
