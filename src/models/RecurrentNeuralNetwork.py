@@ -259,7 +259,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         return res
 
-    def train(self, trajectories, steps):
+    def train(self, trajectories, target_trajectories, steps):
         """This method retrieves a list of trajectories. It can further
         process or transform these trajectories. But the desired overall
         behaviour is, that it should use the passed trajectories as training
@@ -267,33 +267,27 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         Args:
             trajectories: This is a list of trajectories (A trajectory is a numpy vector)
+            target_trajectories: The target trajectories
             steps: The number of steps the model should execute.
-            learning_rate: The learning rate for this step
         """
-
-        # sample them randomly according to the batch size
-        slices = np.random.randint(0, np.size(trajectories, 2), self.config['batch_size'])
-        traj = trajectories[:, :-1, slices]
-        target = trajectories[:, 1:, slices]
 
         # we want to perform n steps
         for k in range(steps):
-            self.sess.run(self.minimizer, feed_dict={self.x: traj, self.y: target})
+            self.sess.run(self.minimizer, feed_dict={self.x: trajectories, self.y: target_trajectories})
 
-    def validate(self, trajectories):
+    def validate(self, trajectories, target_trajectories):
         """This method basically validates the passed trajectories.
         It therefore splits them up so that the future frame get passed as the target.
 
         Args:
             trajectories: The trajectories to use for validation.
+            target_trajectories: The target trajectories
 
         Returns:
             The error on the passed trajectories
         """
-        traj = trajectories[:, :-1, :]
-        target = trajectories[:, 1:, :]
 
-        return self.sess.run(self.error, feed_dict={self.x: traj, self.y: target})
+        return self.sess.run(self.error, feed_dict={self.x: trajectories, self.y: target_trajectories})
 
     def init_params(self):
         """This initializes the parameters."""

@@ -121,12 +121,15 @@ for episode in range(episodes):
     # execute as much episodes
     for step in range(steps_per_episode):
 
+        # sample them randomly according to the batch size
+        slices = np.random.randint(0, np.size(training_set, 2), config['batch_size'])
+
         # train the model
-        model.train(training_set, steps_per_batch)
+        model.train(training_set[:, :-1, slices], training_set[:, 1:, slices], steps_per_batch)
 
     # calculate validation error
-    validation_error[episode] = model.validate(validation_set)
-    train_error[episode] = model.validate(training_set)
+    validation_error[episode] = model.validate(validation_set[:, :-1, :], validation_set[:, 1:, :])
+    train_error[episode] = model.validate(training_set[:, :-1, :], training_set[:, 1:, :])
 
     # check if we have to update our best error
     if best_val_error > validation_error[episode]:

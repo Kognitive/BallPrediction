@@ -42,13 +42,13 @@ class RecurrentPredictionModel:
     # trajectories - This is a list of trajectories (A trajectory is a numpy vector)
     # steps - The number of steps the model should execute.
     #
-    def train(self, trajectories, steps):
+    def train(self, trajectories, target_trajectories, steps):
         raise NotImplementedError("Please implement a training method for " + str(self.name))
 
     # This method gets a the current state, and tries to output its prediction.
     #
     #
-    def validate(self, trajectories):
+    def validate(self, trajectories, target_trajectories):
         raise NotImplementedError("Please implement a step method for " + str(self.name))
 
     # This method has to be implemented, and the desired behaviour consists in resetting all
