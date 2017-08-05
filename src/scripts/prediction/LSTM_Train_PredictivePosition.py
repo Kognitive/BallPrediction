@@ -54,7 +54,7 @@ show_plots = True
 line = line_length * "-"
 
 # create the configuration
-choosen_model = LSTM
+choosen_model = RecurrentHighWayNetwork
 config = {}
 config['unique_name'] = "1"
 config['num_input'] = 3
@@ -94,7 +94,6 @@ print("Creating Model")
 # define the model using the parameters from top
 model = choosen_model(config)
 model.init_params()
-print("Uploading Data")
 
 # upload the data
 print(line)
