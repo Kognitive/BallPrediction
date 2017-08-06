@@ -53,6 +53,7 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
         """
 
         # Perform the super call
+        config['clip_norm'] = 0
         config['unique_name'] = "RHN_" + config['unique_name']
         super().__init__(config)
 
@@ -109,10 +110,10 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
             hidden_size = H * (C if first else 1)
 
             if first:
-                tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.initializer)
+                tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
 
-            tf.get_variable("R", [H, hidden_size], dtype=tf.float32, initializer=self.initializer)
-            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.initializer)
+            tf.get_variable("R", [H, hidden_size], dtype=tf.float32, initializer=self.weights_initializer)
+            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
     def create_highway_layer(self, name, x, h_state, num_cell):
         """This method creates one layer, it therefore needs a activation

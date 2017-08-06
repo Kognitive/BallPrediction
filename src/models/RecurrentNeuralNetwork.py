@@ -40,6 +40,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
                 num_hidden: The number of units in the hidden layer.
                 num_cells: The number of cells per layer
                 num_layers: Define number of time-step unfolds.
+                clip_norm: The norm, to which a gradient should be clipped
                 batch_size: This represents the batch size used for training.
                 minimizer: Select the appropriate minimizer
                 seed: Represents the seed for this model
@@ -55,7 +56,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         super().__init__(config['unique_name'])
 
         # save hyper parameters
-        self.initializer = tf.random_normal_initializer(0.0, 0.1, seed=config['seed'])
+        self.weights_initializer = tf.contrib.layers.variance_scaling_initializer()
+        self.bias_initializer = tf.constant_initializer(0.0)
+        # tf.random_normal_initializer(0.0, 0.1, seed=config['seed'])
 
         with tf.variable_scope(config['unique_name']):
 
@@ -67,7 +70,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
                 self.init_cell(str(i))
 
             # --------------------------- TRAINING ----------------------------
-            
+
+            self.current_step = -1
+            self.step_num = tf.placeholder(tf.int32, [], name="step_num")
             self.global_step = tf.Variable(0, trainable=False, name='global_step')
             self.learning_rate = tf.train.exponential_decay(
                 self.config['lr_rate'],
@@ -105,7 +110,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             # So far we have got the model
             self.error = 0.5 * tf.reduce_mean(tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0))
             self.a_error = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0)))
-            self.minimizer = self.create_minimizer(self.learning_rate).minimize(self.error)
+            self.minimizer = self.create_minimizer(self.learning_rate, self.error, self.global_step)
 
             # ------------------------------ EVALUATION ---------------------------------
 
@@ -146,9 +151,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """
         with tf.variable_scope("common", reuse=None, ):
             tf.get_variable("O", [self.config['num_input'], self.config['num_hidden'] * self.config['num_cells']],
-                            dtype=tf.float32, initializer=self.initializer)
+                            dtype=tf.float32, initializer=self.weights_initializer)
 
-    def create_minimizer(self, learning_rate):
+    def create_minimizer(self, learning_rate, error, global_step):
         """This method creates the correct optimizer."""
 
         # first of all set the global step to zero, because we train from the beginning
@@ -169,7 +174,21 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             print('Unknown minimizer ' + str_minimizer)
             exit(1)
 
-        return minimizer
+        # calculate the gradients
+        gradients = minimizer.compute_gradients(error)
+
+        # when clipping should be performed
+        if self.config['clip_norm'] > 0:
+            gradients, variables = zip(*gradients)
+            clipped_gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=self.config['clip_norm'])
+
+            # define the trainer
+            trainer = minimizer.apply_gradients(zip(clipped_gradients, variables), global_step=global_step)
+
+        else:
+            trainer = minimizer.apply_gradients(gradients, global_step=global_step)
+
+        return trainer
 
     def init_cell(self, name):
         """This method should initialize one cell.
@@ -271,9 +290,11 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             steps: The number of steps the model should execute.
         """
 
+        self.current_step += 1
+
         # we want to perform n steps
         for k in range(steps):
-            self.sess.run(self.minimizer, feed_dict={self.x: trajectories, self.y: target_trajectories})
+            self.sess.run(self.minimizer, feed_dict={self.x: trajectories, self.y: target_trajectories, self.step_num: self.current_step})
 
     def validate(self, trajectories, target_trajectories):
         """This method basically validates the passed trajectories.
@@ -287,7 +308,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             The error on the passed trajectories
         """
 
-        return self.sess.run(self.error, feed_dict={self.x: trajectories, self.y: target_trajectories})
+        self.current_step += 1
+        return self.sess.run(self.error, feed_dict={self.x: trajectories, self.y: target_trajectories, self.step_num: self.current_step})
 
     def init_params(self):
         """This initializes the parameters."""

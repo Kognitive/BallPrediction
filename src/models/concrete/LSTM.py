@@ -53,6 +53,7 @@ class LSTM(RecurrentNeuralNetwork):
         """
 
         # Perform the super call
+        config['clip_norm'] = 0
         config['unique_name'] = "LSTM_" + config['unique_name']
         super().__init__(config)
 
@@ -98,13 +99,13 @@ class LSTM(RecurrentNeuralNetwork):
             C = self.config['num_cells']
 
             # The input to the layer unit
-            tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.initializer)
-            tf.get_variable("R", [H, H * C], dtype=tf.float32, initializer=self.initializer)
-            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.initializer)
+            tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
+            tf.get_variable("R", [H, H * C], dtype=tf.float32, initializer=self.weights_initializer)
+            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
             # when a peephole is needed
             if self.config['peephole']:
-                tf.get_variable("p", [H, 1], dtype=tf.float32, initializer=self.initializer)
+                tf.get_variable("p", [H, 1], dtype=tf.float32, initializer=self.weights_initializer)
 
     def create_layer(self, name, activation, x, h, s):
         """This method creates one layer, it therefore needs a activation

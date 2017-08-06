@@ -30,6 +30,7 @@ from src.data_loader.concrete.SimDataLoader import SimDataLoader
 from src.models.concrete.LSTM import LSTM
 from src.models.concrete.GatedRecurrentUnit import GatedRecurrentUnit
 from src.models.concrete.RecurrentHighWayNetwork import RecurrentHighWayNetwork
+from src.models.concrete.ClockworkRNN import ClockworkRNN
 from src.utils.Progressbar import Progressbar
 from src.plots.LivePlot import LivePlot
 from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
@@ -54,7 +55,7 @@ show_plots = True
 line = line_length * "-"
 
 # create the configuration
-choosen_model = RecurrentHighWayNetwork
+choosen_model = ClockworkRNN
 config = {}
 config['unique_name'] = "1"
 config['num_input'] = 3
@@ -71,6 +72,10 @@ config['lr_decay_steps'] = 1000
 config['lr_decay_rate'] = 0.9
 config['peephole'] = True
 config['recurrence_depth'] = 6
+
+config['clip_norm'] = 15
+config['num_modules'] = 5
+config['module_size'] = 5
 
 # create the transformer
 transformer = FeedForwardDataTransformer(config['num_layers'])

@@ -26,13 +26,12 @@ import tensorflow as tf
 from src.models.RecurrentNeuralNetwork import RecurrentNeuralNetwork
 
 
-class GatedRecurrentUnit(RecurrentNeuralNetwork):
-    """This model represents a GRU recurrent network. It can
-    be configured in various ways. This concrete implementation
-    features the GRU with forget gates."""
+class ClockworkRNN(RecurrentNeuralNetwork):
+    """This model represents a simple clockwork RNN, based on the
+    equally named paper."""
 
     def __init__(self, config):
-        """Constructs a new GRU.
+        """Constructs a new CW-RNN.
 
         Args:
             config: The configuration parameters
@@ -42,6 +41,7 @@ class GatedRecurrentUnit(RecurrentNeuralNetwork):
                 num_hidden: The number of units in the hidden layer.
                 num_cells: The number of cells per layer
                 num_layers: Define number of time-step unfolds.
+                clip_norm: The norm, to which a gradient should be clipped
                 batch_size: This represents the batch size used for training.
                 minimizer: Select the appropriate minimizer
                 seed: Represents the seed for this model
@@ -49,17 +49,37 @@ class GatedRecurrentUnit(RecurrentNeuralNetwork):
                 lr_rate: The initial learning rate
                 lr_decay_steps: The steps until a decay should happen
                 lr_decay_rate: How much should the learning rate be reduced
+                num_modules: The number of modules with different clocks
+                module_size: The number of neurons per clocked module
         """
 
+        # create the clockwork mask
+        config['unique_name'] = "CWRNN_" + config['unique_name']
+        config['num_cells'] = 1
+        config['num_hidden'] = config['num_modules'] * config['module_size']
+
+        cw_mask = np.ones((config['num_hidden'], config['num_hidden']), dtype=np.int32)
+
+        # fill the other values with ones
+        ms = config['module_size']
+        for y in range(1, config['num_modules']):
+            for x in range(y):
+                cw_mask[ms*y:ms*(y+1), ms*x:ms*(x+1)] = np.zeros((ms, ms), dtype=np.int32)
+
+        # create the constant mask
+        self.cw_mask = tf.constant(cw_mask, dtype=tf.float32)
+
+        # create clock periods
+        self.clock_periods = np.power(2, np.arange(1, config['num_modules'] + 1) - 1)
+
         # Perform the super call
-        config['clip_norm'] = 0
-        config['unique_name'] = "GRU_" + config['unique_name']
         super().__init__(config)
 
     def get_h(self):
         """Gets a reference to the step h."""
         size = self.config['num_hidden'] * self.config['num_cells']
-        return [tf.zeros([size, 1], tf.float32)]
+        h = tf.zeros([size, 1], tf.float32)
+        return [h]
 
     def get_initial_h(self):
         """Gets a reference to the step h."""
@@ -68,59 +88,14 @@ class GatedRecurrentUnit(RecurrentNeuralNetwork):
     def get_step_h(self):
         """Retrieve the step h"""
         size = self.config['num_hidden'] * self.config['num_cells']
-        return [tf.placeholder(tf.float32, [size, 1], name="step_h")]
+        h = tf.placeholder(tf.float32, [size, 1], name="step_h")
+        return [h]
 
     def get_current_h(self):
         """Deliver current h"""
         size = self.config['num_hidden'] * self.config['num_cells']
-        return [np.zeros([size, 1])]
-
-    def init_layer(self, name, hidden_mult):
-        """This method initializes the weights for a layer with the
-        given name.
-
-        Args:
-            name: The name of the layer.
-        """
-
-        with tf.variable_scope(name, reuse=None):
-
-            # extract parameters
-            H = self.config['num_hidden']
-            C = self.config['num_cells']
-            I = self.config['num_input']
-
-            # The input to the layer unit
-            tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
-            tf.get_variable("R", [H, H * hidden_mult], dtype=tf.float32, initializer=self.weights_initializer)
-            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
-
-    def create_layer(self, name, activation, x, h):
-        """This method creates one layer, it therefore needs a activation
-        function, the name as well as the inputs to the layer.
-
-        Args:
-            name: The name of this layer
-            activation: The activation to use.
-            x: The input state
-            h: The hidden state from the previous layer.
-
-        Returns:
-            The output for this layer
-        """
-
-        with tf.variable_scope(name, reuse=True):
-
-            # The input to the layer unit
-            W = tf.get_variable("W")
-            R = tf.get_variable("R")
-            b = tf.get_variable("b")
-
-            # create the term
-            term = W @ x + R @ h + b
-
-            # create the variables only the first times
-            return activation(term)
+        h = np.zeros([size, 1])
+        return [h]
 
     def init_cell(self, name):
         """This method creates the parameters for a cell with
@@ -131,42 +106,58 @@ class GatedRecurrentUnit(RecurrentNeuralNetwork):
         """
         with tf.variable_scope(name, reuse=None):
 
+            # extract values
+            H = self.config['num_hidden']
+            I = self.config['num_input']
+
             # init the layers appropriately
-            self.init_layer("recurrent_gate", self.config['num_cells'])
-            self.init_layer("input_gate", self.config['num_cells'])
-            self.init_layer("input_node", 1)
+            tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
+            tf.get_variable("R", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
+            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
     def create_cell(self, name, x, h_state, num_cell):
-        """This method creates a GRU cell. It basically uses the
+        """This method creates a LSTM cell. It basically uses the
         previously initialized weights.
 
         Args:
             x: The input to the layer.
-            h: The hidden input to the layer.
+            h_state: The hidden input to the layer.
 
         Returns:
             new_h: The new hidden vector
         """
-
         [h] = h_state
+        out_h = list()
 
         with tf.variable_scope(name, reuse=True):
 
-            ex_h = tf.slice(h, [self.config['num_hidden'] * num_cell, 0], [self.config['num_hidden'], 1])
+            # short form
+            ms = self.config['module_size']
 
-            # create all gate layers
-            recurrent_gate = self.create_layer("recurrent_gate", tf.sigmoid, x, h)
-            mod_h = tf.multiply(recurrent_gate, ex_h)
+            # get matrices appropriately
+            WH = tf.get_variable("W")
+            RH = self.cw_mask * tf.get_variable("R")
+            b = tf.get_variable("b")
 
-            input_gate = self.create_layer("input_gate", tf.sigmoid, x, h)
-            input_node = self.create_layer("input_node", tf.tanh, x, mod_h)
+            # create the modules itself
+            for t in range(self.config['num_modules']):
 
-            # update input gate
-            right_input_node = tf.multiply(input_gate, input_node)
-            left_input_node = tf.multiply(tf.ones([]) - input_gate, ex_h)
+                # extract the block row
+                block_row = tf.slice(RH, [ms * t, 0], [ms, self.config['num_hidden']])
 
-            # calculate the new s
-            new_h = tf.add(left_input_node, right_input_node)
+                # make conditional if full or zero
+                condition = tf.equal(tf.mod(self.step_num, tf.constant(self.clock_periods[t], dtype=tf.int32)), tf.constant(0))
+                filter_row = tf.cond(condition, lambda: tf.identity(block_row), lambda: tf.zeros([ms, self.config['num_hidden']]))
 
-        # pass back both states
+                # retrieve block b and wh
+                block_b = tf.slice(b, [ms * t, 0], [ms, 1])
+                block_w = tf.slice(WH, [ms * t, 0], [ms, self.config['num_input']])
+
+                # append to output list
+                out_h.append(block_w @ x + filter_row @ h + block_b)
+
+            # create new hidden vector
+            new_h = tf.concat(out_h, axis=0)
+
+        # pass back the new hidden state
         return [new_h]
