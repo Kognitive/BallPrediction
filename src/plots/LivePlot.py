@@ -50,6 +50,9 @@ class LivePlot:
         plt.legend()
         plt.pause(0.01)
 
+    def save(self, filename):
+        plt.savefig(filename)
+
     def close(self):
         plt.ioff()
         plt.show()

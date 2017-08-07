@@ -20,14 +20,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
 
+from src.data_loader.concrete.SimDataLoader import SimDataLoader
+from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 # we want to evaluate the LSTM
 from src.models.concrete.LSTM import LSTM
-from src.data_loader.concrete.SimDataLoader import SimDataLoader
-from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
 from src.utils.Progressbar import Progressbar
 
 data_dir = 'sim_training_data/data_v1'

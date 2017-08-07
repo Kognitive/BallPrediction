@@ -83,7 +83,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # create a tensor for the input
             self.x = tf.placeholder(tf.float32, [config['num_input'], config['num_layers'], None], name="input")
-            self.y = tf.placeholder(tf.float32, [config['num_input'], config['num_layers'], None], name="target")
+            self.y = tf.placeholder(tf.float32, [config['num_input'], None], name="target")
 
             # define the memory state
             self.h = self.get_h()
@@ -94,22 +94,18 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             # use for dynamic
             h = self.get_initial_h()
 
-            # create weights
-            outputs = list()
-
             # unfold the cell
             for x_in in unstacked_x:
 
                 # create a cell
-                y, h = self.create_combined_cell(x_in, h)
-                outputs.append(y)
+                self.target_y, h = self.create_combined_cell(x_in, h)
 
-            # the final states
-            self.target_y = tf.stack(outputs, axis=1)
+            # first of create the reduced squared error
+            red_squared_err = tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0)
 
             # So far we have got the model
-            self.error = 0.5 * tf.reduce_mean(tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0))
-            self.a_error = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0)))
+            self.error = 0.5 * tf.reduce_mean(red_squared_err, axis=0)
+            self.a_error = tf.reduce_mean(tf.sqrt(red_squared_err), axis=0)
             self.minimizer = self.create_minimizer(self.learning_rate, self.error, self.global_step)
 
             # ------------------------------ EVALUATION ---------------------------------
@@ -309,7 +305,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """
 
         self.current_step += 1
-        return self.sess.run(self.error, feed_dict={self.x: trajectories, self.y: target_trajectories, self.step_num: self.current_step})
+        return self.sess.run(self.a_error, feed_dict={self.x: trajectories, self.y: target_trajectories, self.step_num: self.current_step})
 
     def init_params(self):
         """This initializes the parameters."""

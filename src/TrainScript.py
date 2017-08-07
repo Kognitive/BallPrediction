@@ -24,12 +24,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 from src.controller.concrete.PathFoldController import PathFoldController
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
-from src.models.concrete.LSTM import LSTM
 from src.data_normalizer.concrete.IdentityNormalizer import IdentityNormalizer
-from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
+from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
+from src.models.concrete.LSTM import LSTM
 
 # specify the result dir
 result_dir = 'run'

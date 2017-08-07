@@ -21,89 +21,66 @@
 # SOFTWARE.
 
 # import the training controller
-import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
 
-from src.controller.concrete.PathFoldController import PathFoldController
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
-from src.models.concrete.LSTM import LSTM
-from src.models.concrete.GatedRecurrentUnit import GatedRecurrentUnit
-from src.models.concrete.RecurrentHighWayNetwork import RecurrentHighWayNetwork
-from src.models.concrete.ClockworkRNN import ClockworkRNN
-from src.utils.Progressbar import Progressbar
+from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 from src.plots.LivePlot import LivePlot
-from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
+from src.scripts.position_prediction.Configurations import Configurations
+from src.utils.Progressbar import Progressbar
 
 # Data Settings
 data_dir = 'sim_training_data/data_v1'
+output_dir = 'run/lstm/minimizer_comparison'
 loader = SimDataLoader(data_dir)
+show_train_error = True
 
 # Format settings
 line_length = 80
-
-# Training parameters
-episodes = 1000
-batch_size = 100
-steps_per_episode = 100
-steps_per_batch = 1
-show_plots = True
 
 # ------------------------ SCRIPT -------------------------
 
 # define the line length for printing
 line = line_length * "-"
+print(line)
 
-# create the configuration
-choosen_model = ClockworkRNN
-config = {}
-config['unique_name'] = "1"
-config['num_input'] = 3
-config['num_output'] = 3
-config['num_hidden'] = 20
-config['num_cells'] = 3
-config['num_layers'] = 20
-config['batch_size'] = batch_size
-config['seed'] = 3
-config['minimizer'] = 'momentum'
-config['momentum'] = 0.95
-config['lr_rate'] = 0.01
-config['lr_decay_steps'] = 1000
-config['lr_decay_rate'] = 0.9
-config['peephole'] = True
-config['recurrence_depth'] = 6
-
-config['clip_norm'] = 15
-config['num_modules'] = 5
-config['module_size'] = 5
-
-# create the transformer
-transformer = FeedForwardDataTransformer(config['num_layers'])
+# retrieve the model
+config, chosen_model = Configurations.get_configuration_with_model('rhn')
 
 # load trajectories, split them up and transform them
 trajectories = loader.load_complete_data()
 path_count = len(trajectories)
-permutation = np.random.permutation(path_count)
-num = int(np.ceil(path_count / 3))
+num_trajectories = path_count
+permutation = np.random.permutation(path_count)[:num_trajectories]
+num = int(np.ceil(num_trajectories / 3))
 slices_va = permutation[:num]
 slices_tr = permutation[num:]
-validation_set = transformer.transform([trajectories[i] for i in slices_va])
-training_set = transformer.transform([trajectories[i] for i in slices_tr])
+
+# transformation parameters
+I = config['num_layers']
+K = 20
+
+# transform the data
+validation_set_in, validation_set_out = FeedForwardDataTransformer.transform([trajectories[i] for i in slices_va], I, K)
+training_set_in, training_set_out = FeedForwardDataTransformer.transform([trajectories[i] for i in slices_tr], I, K)
 
 # define the size of training and validation set
-config['tr_size'] = np.size(training_set, 2)
-config['va_size'] = np.size(validation_set, 2)
+config['tr_size'] = np.size(training_set_in, 2)
+config['va_size'] = np.size(validation_set_in, 2)
 
+# some debug printing
 print(line)
 print("Creating Model")
+
 # define the model using the parameters from top
-model = choosen_model(config)
+model = chosen_model(config)
 model.init_params()
 
 # upload the data
 print(line)
 
 # define the overall error
+episodes = config['episodes']
 validation_error = np.zeros(episodes)
 train_error = np.zeros(episodes)
 overall_error = np.zeros([2, episodes])
@@ -124,17 +101,17 @@ best_val_error = 1000000000
 for episode in range(episodes):
 
     # execute as much episodes
-    for step in range(steps_per_episode):
+    for step in range(config['steps_per_episode']):
 
         # sample them randomly according to the batch size
-        slices = np.random.randint(0, np.size(training_set, 2), config['batch_size'])
+        slices = np.random.randint(0, config['tr_size'], config['batch_size'])
 
         # train the model
-        model.train(training_set[:, :-1, slices], training_set[:, 1:, slices], steps_per_batch)
+        model.train(training_set_in[:, :, slices], training_set_out[:, slices], config['steps_per_batch'])
 
     # calculate validation error
-    validation_error[episode] = model.validate(validation_set[:, :-1, :], validation_set[:, 1:, :])
-    train_error[episode] = model.validate(training_set[:, :-1, :], training_set[:, 1:, :])
+    validation_error[episode] = model.validate(validation_set_in, validation_set_out)
+    if show_train_error: train_error[episode] = model.validate(training_set_in, training_set_out)
 
     # check if we have to update our best error
     if best_val_error > validation_error[episode]:
@@ -143,6 +120,7 @@ for episode in range(episodes):
 
     # update progressbar
     p_bar.progress()
-    lv.update_plot(episode, validation_error, train_error)
+    lv.update_plot(episode, validation_error, train_error if show_train_error else None)
 
+lv.save('run/rhn.eps')
 lv.close()

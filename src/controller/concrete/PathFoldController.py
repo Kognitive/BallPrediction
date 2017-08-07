@@ -25,11 +25,9 @@ import numpy as np
 
 # own packages
 from src.controller.TrainingController import TrainingController
-from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 from src.data_loader.DataLoader import DataLoader
-from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
+from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 from src.plots.LivePlot import LivePlot
-
 # this class is a basic controller
 from src.utils.Progressbar import Progressbar
 

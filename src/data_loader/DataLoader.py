@@ -56,8 +56,8 @@ class DataLoader:
         if not self.loaded:
 
             print("Started to fetch data from HD")
-
             d = self.load_data()
+
             print("Data successfully loaded from HD")
 
             self.loaded = True

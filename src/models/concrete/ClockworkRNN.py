@@ -146,7 +146,7 @@ class ClockworkRNN(RecurrentNeuralNetwork):
                 block_row = tf.slice(RH, [ms * t, 0], [ms, self.config['num_hidden']])
 
                 # make conditional if full or zero
-                condition = tf.equal(tf.mod(self.step_num, tf.constant(self.clock_periods[t], dtype=tf.int32)), tf.constant(0))
+                condition = tf.equal(tf.mod(self.step_num + num_cell, tf.constant(self.clock_periods[t], dtype=tf.int32)), tf.constant(0))
                 filter_row = tf.cond(condition, lambda: tf.identity(block_row), lambda: tf.zeros([ms, self.config['num_hidden']]))
 
                 # retrieve block b and wh
@@ -154,7 +154,7 @@ class ClockworkRNN(RecurrentNeuralNetwork):
                 block_w = tf.slice(WH, [ms * t, 0], [ms, self.config['num_input']])
 
                 # append to output list
-                out_h.append(block_w @ x + filter_row @ h + block_b)
+                out_h.append(tf.nn.relu(block_w @ x + filter_row @ h + block_b))
 
             # create new hidden vector
             new_h = tf.concat(out_h, axis=0)

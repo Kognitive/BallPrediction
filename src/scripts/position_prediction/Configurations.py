@@ -19,6 +19,11 @@ class Configurations:
             Tuple (a,b) where a is the model and b the configuration
         """
         config = {}
+        config['episodes'] = 1000
+        config['batch_size'] = 100
+        config['steps_per_episode'] = 100
+        config['steps_per_batch'] = 1
+
         if model_name == 'lstm':
 
             # create model and configuration
@@ -27,22 +32,18 @@ class Configurations:
             config['unique_name'] = "1"
             config['num_input'] = 3
             config['num_output'] = 3
-            config['num_hidden'] = 20
-            config['num_cells'] = 3
-            config['num_layers'] = 20
-            config['batch_size'] = 20
+            config['num_hidden'] = 128
+            config['num_cells'] = 10
+            config['num_layers'] = 40
+            config['batch_size'] = 256
             config['seed'] = 3
             config['minimizer'] = 'momentum'
             config['momentum'] = 0.95
             config['lr_rate'] = 0.01
             config['lr_decay_steps'] = 1000
             config['lr_decay_rate'] = 0.9
-            config['peephole'] = True
-            config['recurrence_depth'] = 6
 
-            config['clip_norm'] = 15
-            config['num_modules'] = 5
-            config['module_size'] = 5
+            config['peephole'] = True
 
         elif model_name == 'gru':
 
@@ -52,22 +53,16 @@ class Configurations:
             config['unique_name'] = "1"
             config['num_input'] = 3
             config['num_output'] = 3
-            config['num_hidden'] = 20
+            config['num_hidden'] = 128
             config['num_cells'] = 3
-            config['num_layers'] = 20
-            config['batch_size'] = 20
+            config['num_layers'] = 30
+            config['batch_size'] = 100
             config['seed'] = 3
             config['minimizer'] = 'momentum'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.01
+            config['lr_rate'] = 0.0005
             config['lr_decay_steps'] = 1000
             config['lr_decay_rate'] = 0.9
-            config['peephole'] = True
-            config['recurrence_depth'] = 6
-
-            config['clip_norm'] = 15
-            config['num_modules'] = 5
-            config['module_size'] = 5
 
         elif model_name == 'rhn':
 
@@ -77,22 +72,18 @@ class Configurations:
             config['unique_name'] = "1"
             config['num_input'] = 3
             config['num_output'] = 3
-            config['num_hidden'] = 20
+            config['num_hidden'] = 128
             config['num_cells'] = 3
-            config['num_layers'] = 20
-            config['batch_size'] = 20
+            config['num_layers'] = 24
+            config['batch_size'] = 256
             config['seed'] = 3
             config['minimizer'] = 'momentum'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.01
+            config['lr_rate'] = 0.0005
             config['lr_decay_steps'] = 1000
             config['lr_decay_rate'] = 0.9
-            config['peephole'] = True
-            config['recurrence_depth'] = 6
 
-            config['clip_norm'] = 15
-            config['num_modules'] = 5
-            config['module_size'] = 5
+            config['recurrence_depth'] = 6
 
         elif model_name == 'cwrnn':
 
@@ -102,19 +93,22 @@ class Configurations:
             config['unique_name'] = "1"
             config['num_input'] = 3
             config['num_output'] = 3
-            config['num_hidden'] = 20
+            config['num_hidden'] = 64
             config['num_cells'] = 3
-            config['num_layers'] = 20
-            config['batch_size'] = 20
+            config['num_layers'] = 30
+            config['batch_size'] = 128
             config['seed'] = 3
             config['minimizer'] = 'momentum'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.01
+            config['lr_rate'] = 0.1
             config['lr_decay_steps'] = 1000
             config['lr_decay_rate'] = 0.9
-            config['peephole'] = True
-            config['recurrence_depth'] = 6
 
-            config['clip_norm'] = 15
-            config['num_modules'] = 5
-            config['module_size'] = 5
+            config['clip_norm'] = 10
+            config['num_modules'] = 16
+            config['module_size'] = 8
+
+        else:
+            exit(1)
+
+        return config, model

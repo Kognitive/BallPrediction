@@ -22,9 +22,10 @@
 
 import numpy as np
 
-from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
+from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 from src.utils.SetQueue import SetQueue
+
 
 # This abstract class is a Feed Forward Prediction Model. It is a special
 # case of a recurrent prediction model.

@@ -22,64 +22,59 @@
 
 import numpy as np
 
-from src.data_transformer.DataTransformer import DataTransformer
 from src.utils.SetQueue import SetQueue
 
-# This class is a basic FeedForwardDataTransformer. It basically transforms trajectories
-# into supervised training data.
 
+class FeedForwardDataTransformer:
+    """This class can be used to transform data."""
 
-class FeedForwardDataTransformer(DataTransformer):
+    @staticmethod
+    def transform(trajectories, I, K):
+        """This method is used to transform the input trajectories, so they
+        can be processed further in the application.
 
-    # This constructs the FeedForwardDataTransformer
-    #
-    # I - the number of position inputs
-    # O - the number of position outputs
-    # K - the offset between input and output
-    #
-    def __init__(self, I):
-
-        # save the hyper parameters
-        self.I = I
-
-        # this is the maximum size
-        self.QS = self.I + 1
-
-    # This method has to be implemented in order to support the data transformation.
-    #
-    # trajectories - the list of trajectories to transform.
-    #
-    def transform(self, trajectories):
+        Args:
+            trajectories: The trajectories
+            I: The number of input frames.
+            K: The offset between the last input and the first output
+        """
 
         # integrate
         input_data = list()
+        target_data = list()
+
+        # get the queue size
+        queue_size = I + K - 1
 
         # create a new state queue
-        state_queue = SetQueue(3, self.QS)
+        state_queue = SetQueue(3, queue_size)
 
         # iterate over all trajectories
         for trajectory in trajectories:
 
             # continue when size to small
-            if np.size(trajectory, 0) <= self.QS:
+            if np.size(trajectory, 0) <= queue_size:
                 continue
 
             # reset the queue
             state_queue.reset()
 
             # fill complete queue with entries
-            for i in range(self.QS - 1):
+            for i in range(queue_size - 1):
                 state_queue.insert(trajectory[i, :])
 
             # gather the overall number of points
             num_points = np.size(trajectory, 0)
 
             # iterate over the remaining points
-            for i in range(self.QS - 1, num_points):
+            for i in range(queue_size - 1, num_points):
 
                 # insert into queue
                 state_queue.insert(trajectory[i, :])
                 data = state_queue.get()
-                input_data.append(np.transpose(data))
+                in_data = data[:I, :]
+                out_data = np.squeeze(data[-1:, :])
+                input_data.append(np.transpose(in_data))
+                target_data.append(np.transpose(out_data))
 
-        return np.stack(input_data, axis=2)
+        return np.stack(input_data, axis=2), np.stack(target_data, axis=1)

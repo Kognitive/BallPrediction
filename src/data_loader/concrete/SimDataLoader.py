@@ -59,7 +59,7 @@ class SimDataLoader(DataLoader):
         for file in subfiles:
 
             # load the positions as well as the timestamp
-            data.append(np.loadtxt(file)[:, 0:3])
+            data.append(np.loadtxt(file)[::5, 0:3])
 
         return data
 

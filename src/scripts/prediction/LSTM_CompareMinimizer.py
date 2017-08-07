@@ -20,17 +20,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import datetime
+import os.path
+
 # import the training controller
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-import datetime
-import os.path
 
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
+from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 from src.models.concrete.LSTM import LSTM
 from src.utils.Progressbar import Progressbar
-from src.data_transformer.concrete.FeedForwardDataTransformer import FeedForwardDataTransformer
 
 # Data Settings
 data_dir = 'sim_training_data/data_v1'
