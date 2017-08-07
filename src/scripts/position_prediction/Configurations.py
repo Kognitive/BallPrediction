@@ -18,6 +18,7 @@ class Configurations:
         Returns:
             Tuple (a,b) where a is the model and b the configuration
         """
+
         config = {}
         config['episodes'] = 1000
         config['batch_size'] = 100
@@ -72,18 +73,17 @@ class Configurations:
             config['unique_name'] = "1"
             config['num_input'] = 3
             config['num_output'] = 3
-            config['num_hidden'] = 128
-            config['num_cells'] = 3
+            config['num_hidden'] = 32
+            config['num_cells'] = 5
             config['num_layers'] = 24
             config['batch_size'] = 256
             config['seed'] = 3
             config['minimizer'] = 'momentum'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.0005
+            config['lr_rate'] = 0.005
             config['lr_decay_steps'] = 1000
             config['lr_decay_rate'] = 0.9
-
-            config['recurrence_depth'] = 6
+            config['recurrence_depth'] = 20
 
         elif model_name == 'cwrnn':
 
