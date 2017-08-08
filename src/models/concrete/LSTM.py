@@ -53,32 +53,26 @@ class LSTM(RecurrentNeuralNetwork):
         """
 
         # Perform the super call
-        config['clip_norm'] = 0
         config['unique_name'] = "LSTM_" + config['unique_name']
         super().__init__(config)
 
     def get_h(self):
         """Gets a reference to the step h."""
-        size = self.config['num_hidden'] * self.config['num_cells']
+        size = self.config['num_hidden']
         h = tf.zeros([size, 1], tf.float32)
         s = tf.zeros([size, 1], tf.float32)
         return [h, s]
 
-
-    def get_initial_h(self):
-        """Gets a reference to the step h."""
-        return self.h
-
     def get_step_h(self):
         """Retrieve the step h"""
-        size = self.config['num_hidden'] * self.config['num_cells']
+        size = self.config['num_hidden']
         h = tf.placeholder(tf.float32, [size, 1], name="step_h")
         s = tf.placeholder(tf.float32, [size, 1], name="step_s")
         return [h, s]
 
     def get_current_h(self):
         """Deliver current h"""
-        size = self.config['num_hidden'] * self.config['num_cells']
+        size = self.config['num_hidden']
         h = np.zeros([size, 1])
         s = np.zeros([size, 1])
         return [h, s]
@@ -95,13 +89,14 @@ class LSTM(RecurrentNeuralNetwork):
 
             # short form
             H = self.config['num_hidden']
-            I = self.config['num_input']
-            C = self.config['num_cells']
 
             # The input to the layer unit
-            tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
-            tf.get_variable("R", [H, H * C], dtype=tf.float32, initializer=self.weights_initializer)
-            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
+            tf.get_variable("W", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
+            tf.get_variable("R", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
+
+            # perform a init to 1 for the forget gate
+            bias_init = self.bias_initializer if not name == 'forget_gate' else tf.constant_initializer(1.0)
+            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=bias_init)
 
             # when a peephole is needed
             if self.config['peephole']:
@@ -147,7 +142,8 @@ class LSTM(RecurrentNeuralNetwork):
         Args:
             name: The name for this cell, e.g. 1
         """
-        with tf.variable_scope(name, reuse=None):
+
+        with tf.variable_scope(name):
 
             # init the layers appropriately
             self.init_layer("forget_gate")
@@ -155,7 +151,7 @@ class LSTM(RecurrentNeuralNetwork):
             self.init_layer("input_gate")
             self.init_layer("input_node")
 
-    def create_cell(self, name, x, h_state, num_cell):
+    def create_cell(self, name, x, h_state):
         """This method creates a LSTM cell. It basically uses the
         previously initialized weights.
 
@@ -170,17 +166,15 @@ class LSTM(RecurrentNeuralNetwork):
 
         with tf.variable_scope(name, reuse=True):
 
-            sliced_s = tf.slice(s, [self.config['num_hidden'] * num_cell, 0], [self.config['num_hidden'], 1])
-
             # create all gate layers
-            forget_gate = self.create_layer("forget_gate", tf.sigmoid, x, h, sliced_s)
-            output_gate = self.create_layer("output_gate", tf.sigmoid, x, h, sliced_s)
-            input_gate = self.create_layer("input_gate", tf.sigmoid, x, h, sliced_s)
-            input_node = self.create_layer("input_node", tf.tanh, x, h, sliced_s)
+            forget_gate = self.create_layer("forget_gate", tf.sigmoid, x, h, s)
+            output_gate = self.create_layer("output_gate", tf.sigmoid, x, h, s)
+            input_gate = self.create_layer("input_gate", tf.sigmoid, x, h, s)
+            input_node = self.create_layer("input_node", tf.tanh, x, h, s)
 
             # update input gate
             input_gate = tf.multiply(input_gate, input_node)
-            forgotten_memory = tf.multiply(forget_gate, sliced_s)
+            forgotten_memory = tf.multiply(forget_gate, s)
 
             # calculate the new s
             new_s = tf.add(input_gate, forgotten_memory)

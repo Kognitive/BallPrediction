@@ -21,17 +21,23 @@
 # SOFTWARE.
 
 # import the training controller
+import datetime
 import numpy as np
+import os
+import configparser
+
+# import live plot
+from src.plots.LivePlot import LivePlot
 
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
 from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
-from src.plots.LivePlot import LivePlot
 from src.scripts.position_prediction.Configurations import Configurations
 from src.utils.Progressbar import Progressbar
 
 # Data Settings
 data_dir = 'sim_training_data/data_v1'
-output_dir = 'run/lstm/minimizer_comparison'
+log_dir = 'run/position_prediction'
+
 loader = SimDataLoader(data_dir)
 show_train_error = True
 
@@ -44,8 +50,16 @@ line_length = 80
 line = line_length * "-"
 print(line)
 
+# create the timestamp
+timestamp = '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now())
+old_output_dir = log_dir + "/" + timestamp + "/"
+output_dir = log_dir + "/" + timestamp + "_RUNNING/"
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+
 # retrieve the model
-config, chosen_model = Configurations.get_configuration_with_model('rhn')
+config, chosen_model = Configurations.get_configuration_with_model('lstm')
+config['log_dir'] = output_dir
 
 # load trajectories, split them up and transform them
 trajectories = loader.load_complete_data()
@@ -76,6 +90,20 @@ print("Creating Model")
 model = chosen_model(config)
 model.init_params()
 
+# write the config
+parser = configparser.ConfigParser()
+parser.add_section(model.name)
+
+# add all configuration parameters
+for key in config.keys():
+    parser.set(model.name, key, str(config[key]))
+
+# and write to disk
+with open(output_dir + "configuration.ini", 'w') as cfg_file:
+    parser.write(cfg_file)
+
+print("Model configuration saved on disk.")
+
 # upload the data
 print(line)
 
@@ -91,11 +119,12 @@ print(line)
 
 # create progressbar
 p_bar = Progressbar(episodes, line_length)
-lv = LivePlot()
 
 # check if validation error gets better
 best_episode = 0
 best_val_error = 1000000000
+
+lv = LivePlot()
 
 # set the range
 for episode in range(episodes):
@@ -118,9 +147,11 @@ for episode in range(episodes):
         best_episode = episode
         best_val_error = validation_error[episode]
 
-    # update progressbar
-    p_bar.progress()
+    # update live plot
     lv.update_plot(episode, validation_error, train_error if show_train_error else None)
 
-lv.save('run/rhn.eps')
+    # update progressbar
+    p_bar.progress()
+
+os.rename(output_dir, old_output_dir)
 lv.close()

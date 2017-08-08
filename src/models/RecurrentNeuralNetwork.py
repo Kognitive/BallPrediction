@@ -56,23 +56,22 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         super().__init__(config['unique_name'])
 
         # save hyper parameters
-        self.weights_initializer = tf.contrib.layers.variance_scaling_initializer()
+        self.weights_initializer = tf.contrib.layers.variance_scaling_initializer(1.0, 'FAN_AVG', True, config['seed'])
         self.bias_initializer = tf.constant_initializer(0.0)
-        # tf.random_normal_initializer(0.0, 0.1, seed=config['seed'])
 
-        with tf.variable_scope(config['unique_name']):
+        with tf.variable_scope(config['unique_name']) as scope:
 
-            # init
-            self.init_common()
+            # init some variables
+            O = tf.get_variable("O", [self.config['num_input'], self.config['num_hidden']], dtype=tf.float32, initializer=self.weights_initializer)
+            self.init_pre_processing_layer()
 
-            # initialize num_cells different cells
-            for i in range(self.config['num_cells']):
-                self.init_cell(str(i))
+            # init combined cells
+            for k in range(config['num_stacks']):
+                self.init_cell(str(k))
 
             # --------------------------- TRAINING ----------------------------
 
-            self.current_step = -1
-            self.step_num = tf.placeholder(tf.int32, [], name="step_num")
+            self.current_step = 0
             self.global_step = tf.Variable(0, trainable=False, name='global_step')
             self.learning_rate = tf.train.exponential_decay(
                 self.config['lr_rate'],
@@ -86,19 +85,27 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             self.y = tf.placeholder(tf.float32, [config['num_input'], None], name="target")
 
             # define the memory state
-            self.h = self.get_h()
+            self.h = list()
+            for k in range(config['num_stacks']):
+                self.h.append(self.get_h())
 
             # unstack the input
             unstacked_x = tf.unstack(self.x, axis=1)
 
             # use for dynamic
-            h = self.get_initial_h()
+            h = self.h
 
             # unfold the cell
             for x_in in unstacked_x:
 
                 # create a cell
-                self.target_y, h = self.create_combined_cell(x_in, h)
+                processed_x_in = self.create_pre_processing_layer(x_in)
+
+                # stack them up
+                for k in range(config['num_stacks']):
+                    h[k] = self.create_cell(str(k), processed_x_in, h[k])
+
+            self.target_y = O @ h[config['num_stacks'] - 1][0]
 
             # first of create the reduced squared error
             red_squared_err = tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0)
@@ -112,10 +119,18 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # here comes the step model
             self.step_x = tf.placeholder(tf.float32, [config['num_input'], 1], name="step_x")
-            self.step_h = self.get_step_h()
+            step_h = list()
+            for k in range(config['num_stacks']):
+                step_h.append(self.get_step_h())
 
             # the model
-            self.step_y, self.step_out_h = self.create_combined_cell(self.step_x, self.step_h)
+            step_pre_processed_x_in = self.create_pre_processing_layer(self.step_x)
+
+            self.step_out_h = list()
+            for k in range(config['num_stacks']):
+                step_h[k] = self.create_cell(str(k), step_pre_processed_x_in, step_h[k])
+
+            self.step_y = O @ step_h[config['num_stacks'] - 1][0]
 
         # state vars
         self.current_h = self.get_current_h()
@@ -124,15 +139,29 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         tf.set_random_seed(self.config['seed'])
         init = tf.global_variables_initializer()
         self.sess = tf.Session()
+
+        # this represents the writers
+        self.train_writer = tf.summary.FileWriter(config['log_dir'] + 'train', self.sess.graph)
+        self.test_writer = tf.summary.FileWriter(config['log_dir'] + 'test', self.sess.graph)
+
+        # create saver, so training is not discarded
+        self.saver = tf.train.Saver()
+
+        # create some summaries
+        with tf.name_scope('summaries'):
+
+            # create all summaries
+            tf.summary.scalar("mean_squared_error", self.error)
+            tf.summary.scalar("absolute_error", self.a_error)
+            tf.summary.scalar("learning_rate", self.learning_rate)
+
+        # merge all summaries
+        self.summaries = tf.summary.merge_all()
         self.sess.run(init)
 
     def get_h(self):
         """Gets a reference to the step h."""
         raise NotImplementedError("Get the current h")
-
-    def get_initial_h(self):
-        """Gets a reference to the step h."""
-        raise NotImplementedError("Get the current initial h")
 
     def get_step_h(self):
         """Retrieve the step h"""
@@ -142,12 +171,62 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """Deliver current h"""
         raise NotImplementedError("Retrieve the current hidden state.")
 
-    def init_common(self):
-        """This initializes the common variables.
-        """
-        with tf.variable_scope("common", reuse=None, ):
-            tf.get_variable("O", [self.config['num_input'], self.config['num_hidden'] * self.config['num_cells']],
-                            dtype=tf.float32, initializer=self.weights_initializer)
+    def write_summaries(self, summary, test=False):
+        """Depending on the parameter either a test summary or train summary is written."""
+
+        if test:
+            self.test_writer.add_summary(summary, self.current_step)
+
+        else:
+            self.train_writer.add_summary(summary, self.current_step)
+
+    def save(self):
+        """This method savs the model at the specified checkpoint."""
+        self.saver.save(self.sess, self.config['log_dir'] + "model.ckpt", self.global_step)
+
+    def init_pre_processing_layer(self):
+        """This method basically create a fully connected network using the
+        passed structure."""
+
+        with tf.variable_scope("pre_processing", reuse=None):
+
+            # iterate over the structure
+            struct_len = len(self.config['pre_process_structure'])
+            in_layer = self.config['num_input']
+
+            # iterate over the whole structure and consequently create the
+            # corresponding weights
+            for k in range(struct_len):
+
+                # create the correct values
+                out_layer = self.config['pre_process_structure'][k]
+                tf.get_variable("W" + str(k), [out_layer, in_layer], dtype=tf.float32, initializer=self.weights_initializer)
+                tf.get_variable("b" + str(k), [out_layer, 1], dtype=tf.float32, initializer=self.bias_initializer)
+                in_layer = out_layer
+
+            # create the appropriate weights
+            out_layer = self.config['num_hidden']
+            tf.get_variable("W" + str(struct_len), [out_layer, in_layer], dtype=tf.float32, initializer=self.weights_initializer)
+            tf.get_variable("b" + str(struct_len), [out_layer, 1], dtype=tf.float32, initializer=self.bias_initializer)
+
+    def create_pre_processing_layer(self, x):
+        """This method initializes a pre processing network.
+
+        Args:
+            x: The input to the pre processing layer."""
+
+        with tf.variable_scope("pre_processing", reuse=True):
+
+            # determine first of all the depth of the network
+            struct_len = len(self.config['pre_process_structure'])
+            tree = x
+
+            # simply connect all layers
+            for k in range(struct_len):
+                tree = tf.nn.relu(tf.get_variable("W" + str(k)) @ tree + tf.get_variable("b" + str(k)))
+
+            # pass back the network
+            return tf.nn.relu(tf.get_variable("W" + str(struct_len)) @ tree + tf.get_variable("b" + str(struct_len)))
 
     def create_minimizer(self, learning_rate, error, global_step):
         """This method creates the correct optimizer."""
@@ -175,6 +254,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # when clipping should be performed
         if self.config['clip_norm'] > 0:
+
+            # gradient
             gradients, variables = zip(*gradients)
             clipped_gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=self.config['clip_norm'])
 
@@ -194,7 +275,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """
         raise NotImplementedError("Please implement init_cell")
 
-    def create_cell(self, name, x, h, num_cell):
+    def create_cell(self, name, x, h):
         """This method creates a RNN cell. It basically uses the
         previously initialized weights.
 
@@ -202,42 +283,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             new_h: The new hidden vector
         """
         raise NotImplementedError("Please implement create_cell")
-
-    def create_combined_cell(self, x, h):
-        """This method creates a combined rnn cell. It basically
-        connects them appropriately.
-
-        Args:
-            x: The input vector to the cell (self.I)
-            h: The hidden vector (self.I * self.num_cells)
-
-        Returns:
-            Tuple(y, h), where y is the predicted output,
-            h is the hidden vector for all cells
-        """
-
-        # create all cells
-        all_length = len(h)
-        all_new_h = list()
-        [all_new_h.append(list()) for k in range(all_length)]
-
-        for k in range(self.config['num_cells']):
-            new_h = self.create_cell(str(k), x, h, k)
-
-            # append it to each list
-            for l in range(all_length):
-                all_new_h[l].append(new_h[l])
-
-        # concat all h
-        concat_new_h = [tf.concat(comb_new_h, 0) for comb_new_h in all_new_h]
-
-        # create the output
-        with tf.variable_scope("common", reuse=True):
-            O = tf.get_variable("O")
-            y = O @ concat_new_h[0]
-
-        # pass back the cell outputs
-        return y, concat_new_h
 
     @staticmethod
     def lrelu_activation(x):
@@ -286,11 +331,12 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             steps: The number of steps the model should execute.
         """
 
-        self.current_step += 1
-
         # we want to perform n steps
         for k in range(steps):
-            self.sess.run(self.minimizer, feed_dict={self.x: trajectories, self.y: target_trajectories, self.step_num: self.current_step})
+
+            self.current_step += 1
+            _, summary = self.sess.run([self.minimizer, self.summaries], feed_dict={self.x: trajectories, self.y: target_trajectories})
+            self.write_summaries(summary, False)
 
     def validate(self, trajectories, target_trajectories):
         """This method basically validates the passed trajectories.
@@ -304,8 +350,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             The error on the passed trajectories
         """
 
-        self.current_step += 1
-        return self.sess.run(self.a_error, feed_dict={self.x: trajectories, self.y: target_trajectories, self.step_num: self.current_step})
+        aerror, summary = self.sess.run([self.a_error, self.summaries], feed_dict={self.x: trajectories, self.y: target_trajectories})
+        self.write_summaries(summary, True)
+        return aerror
 
     def init_params(self):
         """This initializes the parameters."""

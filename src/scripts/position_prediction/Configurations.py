@@ -20,30 +20,29 @@ class Configurations:
         """
 
         config = {}
-        config['episodes'] = 1000
-        config['batch_size'] = 100
-        config['steps_per_episode'] = 100
+        config['episodes'] = 100
+        config['steps_per_episode'] = 10
         config['steps_per_batch'] = 1
 
         if model_name == 'lstm':
 
             # create model and configuration
             model = LSTM
-
             config['unique_name'] = "1"
             config['num_input'] = 3
             config['num_output'] = 3
-            config['num_hidden'] = 128
-            config['num_cells'] = 10
-            config['num_layers'] = 40
+            config['num_hidden'] = 64
+            config['num_layers'] = 24
+            config['num_stacks'] = 5
             config['batch_size'] = 256
             config['seed'] = 3
-            config['minimizer'] = 'momentum'
+            config['minimizer'] = 'rmsprop'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.01
-            config['lr_decay_steps'] = 1000
-            config['lr_decay_rate'] = 0.9
-
+            config['lr_rate'] = 0.001
+            config['lr_decay_steps'] = 100
+            config['lr_decay_rate'] = 0.90
+            config['clip_norm'] = 0
+            config['pre_process_structure'] = [64]
             config['peephole'] = True
 
         elif model_name == 'gru':
@@ -73,17 +72,17 @@ class Configurations:
             config['unique_name'] = "1"
             config['num_input'] = 3
             config['num_output'] = 3
-            config['num_hidden'] = 32
-            config['num_cells'] = 5
+            config['num_hidden'] = 16
+            config['num_cells'] = 3
             config['num_layers'] = 24
             config['batch_size'] = 256
             config['seed'] = 3
             config['minimizer'] = 'momentum'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.005
-            config['lr_decay_steps'] = 1000
+            config['lr_rate'] = 0.0005
+            config['lr_decay_steps'] = 100000
             config['lr_decay_rate'] = 0.9
-            config['recurrence_depth'] = 20
+            config['recurrence_depth'] = 16
 
         elif model_name == 'cwrnn':
 
