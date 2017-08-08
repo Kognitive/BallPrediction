@@ -3,9 +3,13 @@ from src.models.concrete.GatedRecurrentUnit import GatedRecurrentUnit
 from src.models.concrete.RecurrentHighWayNetwork import RecurrentHighWayNetwork
 from src.models.concrete.ClockworkRNN import ClockworkRNN
 
+import tensorflow as tf
+
+def lrelu(x): return tf.maximum(x, 0.01 * x)
 
 class Configurations:
     """This class can be used to obtain the configuration along with the model."""
+
 
     @staticmethod
     def get_configuration_with_model(model_name):
@@ -23,89 +27,68 @@ class Configurations:
         config['episodes'] = 100
         config['steps_per_episode'] = 10
         config['steps_per_batch'] = 1
+        config['batch_size'] = 256
+        config['num_input'] = 3
+        config['num_output'] = 3
 
         if model_name == 'lstm':
 
             # create model and configuration
             model = LSTM
-            config['unique_name'] = "1"
-            config['num_input'] = 3
-            config['num_output'] = 3
-            config['num_hidden'] = 64
+            config['unique_name'] = "StackLSTM"
+            config['seed'] = 3
+
+            config['num_hidden'] = 128
             config['num_layers'] = 24
             config['num_stacks'] = 5
-            config['batch_size'] = 256
-            config['seed'] = 3
-            config['minimizer'] = 'rmsprop'
+            config['input_node_activation'] = tf.nn.tanh
+            config['output_node_activation'] = lrelu
+            config['peephole'] = False
+
+            config['minimizer'] = 'adam'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.001
+            config['lr_rate'] = 0.02
             config['lr_decay_steps'] = 100
-            config['lr_decay_rate'] = 0.90
+            config['lr_decay_rate'] = 0.95
+
+            config['layer_normalization'] = False
             config['clip_norm'] = 0
-            config['pre_process_structure'] = [64]
-            config['peephole'] = True
 
-        elif model_name == 'gru':
-
-            # create model and configuration
-            model = GatedRecurrentUnit
-
-            config['unique_name'] = "1"
-            config['num_input'] = 3
-            config['num_output'] = 3
-            config['num_hidden'] = 128
-            config['num_cells'] = 3
-            config['num_layers'] = 30
-            config['batch_size'] = 100
-            config['seed'] = 3
-            config['minimizer'] = 'momentum'
-            config['momentum'] = 0.95
-            config['lr_rate'] = 0.0005
-            config['lr_decay_steps'] = 1000
-            config['lr_decay_rate'] = 0.9
+            config['preprocess_h_node_activation'] = tf.nn.tanh
+            config['preprocess_activation'] = lrelu
+            config['num_intermediate'] = 64
+            config['num_preprocess_layers'] = 3
+            config['preprocess_coupled_gates'] = True
 
         elif model_name == 'rhn':
 
             # create model and configuration
             model = RecurrentHighWayNetwork
 
-            config['unique_name'] = "1"
-            config['num_input'] = 3
-            config['num_output'] = 3
-            config['num_hidden'] = 16
-            config['num_cells'] = 3
-            config['num_layers'] = 24
-            config['batch_size'] = 256
+            config['unique_name'] = "StackRecurrentHighwayNetwork"
             config['seed'] = 3
-            config['minimizer'] = 'momentum'
-            config['momentum'] = 0.95
-            config['lr_rate'] = 0.0005
-            config['lr_decay_steps'] = 100000
-            config['lr_decay_rate'] = 0.9
-            config['recurrence_depth'] = 16
 
-        elif model_name == 'cwrnn':
-
-            # create model and configuration
-            model = ClockworkRNN
-
-            config['unique_name'] = "1"
-            config['num_input'] = 3
-            config['num_output'] = 3
             config['num_hidden'] = 64
-            config['num_cells'] = 3
-            config['num_layers'] = 30
-            config['batch_size'] = 128
-            config['seed'] = 3
-            config['minimizer'] = 'momentum'
+            config['num_layers'] = 24
+            config['num_stacks'] = 5
+            config['recurrence_depth'] = 10
+            config['h_node_activation'] = tf.nn.tanh
+
+            config['minimizer'] = 'adam'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.1
-            config['lr_decay_steps'] = 1000
+            config['lr_rate'] = 0.05
+            config['lr_decay_steps'] = 100
             config['lr_decay_rate'] = 0.9
 
-            config['clip_norm'] = 10
-            config['num_modules'] = 16
-            config['module_size'] = 8
+            config['coupled_gates'] = True
+            config['layer_normalization'] = False
+            config['clip_norm'] = 0
+
+            config['preprocess_h_node_activation'] = tf.nn.tanh
+            config['preprocess_activation'] = lrelu
+            config['num_intermediate'] = 64
+            config['num_preprocess_layers'] = 5
+            config['preprocess_coupled_gates'] = True
 
         else:
             exit(1)

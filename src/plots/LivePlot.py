@@ -55,4 +55,3 @@ class LivePlot:
 
     def close(self):
         plt.ioff()
-        plt.show()

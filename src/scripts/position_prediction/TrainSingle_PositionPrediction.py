@@ -52,14 +52,15 @@ print(line)
 
 # create the timestamp
 timestamp = '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now())
-old_output_dir = log_dir + "/" + timestamp + "/"
+old_output_dir = log_dir + "/"
 output_dir = log_dir + "/" + timestamp + "_RUNNING/"
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
 # retrieve the model
-config, chosen_model = Configurations.get_configuration_with_model('lstm')
+config, chosen_model = Configurations.get_configuration_with_model('rhn')
 config['log_dir'] = output_dir
+config['time_stamp'] = timestamp
 
 # load trajectories, split them up and transform them
 trajectories = loader.load_complete_data()
@@ -153,5 +154,5 @@ for episode in range(episodes):
     # update progressbar
     p_bar.progress()
 
-os.rename(output_dir, old_output_dir)
+os.rename(output_dir, old_output_dir + str(validation_error[episodes - 1]))
 lv.close()

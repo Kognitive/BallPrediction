@@ -170,7 +170,7 @@ class LSTM(RecurrentNeuralNetwork):
             forget_gate = self.create_layer("forget_gate", tf.sigmoid, x, h, s)
             output_gate = self.create_layer("output_gate", tf.sigmoid, x, h, s)
             input_gate = self.create_layer("input_gate", tf.sigmoid, x, h, s)
-            input_node = self.create_layer("input_node", tf.tanh, x, h, s)
+            input_node = self.create_layer("input_node", self.config['input_node_activation'], x, h, s)
 
             # update input gate
             input_gate = tf.multiply(input_gate, input_node)
@@ -178,7 +178,7 @@ class LSTM(RecurrentNeuralNetwork):
 
             # calculate the new s
             new_s = tf.add(input_gate, forgotten_memory)
-            new_h = tf.multiply(output_gate, LSTM.lrelu_activation(new_s))
+            new_h = tf.multiply(output_gate, self.config['output_node_activation'](new_s))
 
         # pass back both states
         return [new_h, new_s]

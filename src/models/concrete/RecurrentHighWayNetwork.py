@@ -53,99 +53,81 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
         """
 
         # Perform the super call
-        config['clip_norm'] = 0
         config['unique_name'] = "RHN_" + config['unique_name']
         super().__init__(config)
 
     def get_h(self):
         """Gets a reference to the step h."""
-        size = self.config['num_hidden'] * self.config['num_cells']
-        h = tf.zeros([size, 1], tf.float32)
-        return [h]
-
-    def get_initial_h(self):
-        """Gets a reference to the step h."""
-        return self.h
+        return [tf.zeros([self.config['num_hidden'], 1], tf.float32)]
 
     def get_step_h(self):
         """Retrieve the step h"""
-        size = self.config['num_hidden'] * self.config['num_cells']
-        h = tf.placeholder(tf.float32, [size, 1], name="step_h")
-        return [h]
+        return [tf.placeholder(tf.float32, [self.config['num_hidden'], 1], name="step_h")]
 
     def get_current_h(self):
         """Deliver current h"""
-        size = self.config['num_hidden'] * self.config['num_cells']
-        h = np.zeros([size, 1])
-        return [h]
+        return [np.zeros([self.config['num_hidden'], 1])]
 
-    def init_highway_layer(self, name, first):
+    def init_rec_highway_layer(self, layer):
         """This method initializes the weights for a layer with the
         given name.
 
         Args:
-            name: The name of the layer.
+            layer: The number of the layer itself..
             first: Specifies whether this is the first highway layer
         """
 
-        with tf.variable_scope(name, reuse=None):
+        with tf.variable_scope(str(layer), reuse=None):
 
-            self.init_single_layer("C", first)
-            self.init_single_layer("H", first)
-            self.init_single_layer("T", first)
+            if not self.config['coupled_gates']:
+                self.init_single_layer("C", layer)
 
-    def init_single_layer(self, name, first):
+            self.init_single_layer("H", layer)
+            self.init_single_layer("T", layer)
+
+    def init_single_layer(self, name, layer):
         """This method creates a single layer.
 
         Args:
-            name The sub name of the layer inside of the RHN
+            name: The name of the layer
+            layer: The number of the layer
         """
         with tf.variable_scope(name, reuse=None):
 
             # extract parameters
             H = self.config['num_hidden']
-            C = self.config['num_cells']
-            I = self.config['num_input']
 
-            hidden_size = H * (C if first else 1)
+            if layer == 0:
+                tf.get_variable("W", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
 
-            if first:
-                tf.get_variable("W", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
-
-            tf.get_variable("R", [H, hidden_size], dtype=tf.float32, initializer=self.weights_initializer)
+            tf.get_variable("R", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
             tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
-    def create_highway_layer(self, name, x, h_state, num_cell):
+    def create_rec_highway_layer(self, layer, x, h):
         """This method creates one layer, it therefore needs a activation
         function, the name as well as the inputs to the layer.
 
         Args:
-            name: The name of this layer
+            layer: The number of the layer
             x: The input state
-            h_state: The hidden state from the previous layer.
-            num_cell: The number of the cell.
+            h: The hidden state from the previous layer.
 
         Returns:
             The output for this layer
         """
-        h = h_state
-        first = num_cell == 0
 
-        NH = self.config['num_hidden']
-        slice_h = h if not first else tf.slice(h, [NH * num_cell, 0], [NH, 1])
-
-        with tf.variable_scope(name, reuse=True):
+        with tf.variable_scope(str(layer), reuse=True):
 
             # The input to the layer unit
-            C = self.create_single_layer("C", x, h, tf.sigmoid, first)
-            H = self.create_single_layer("H", x, h, tf.tanh, first)
-            T = self.create_single_layer("T", x, h, tf.sigmoid, first)
+            H = self.create_single_layer("H", x, h, self.config['h_node_activation'], layer)
+            T = self.create_single_layer("T", x, h, tf.sigmoid, layer)
+            C = tf.constant(1.0) - T if self.config['coupled_gates'] else self.create_single_layer("C", x, h, tf.sigmoid, layer)
 
             # create the variables only the first times
-            return T * H + C * slice_h
+            return T * H + C * h
 
     @staticmethod
-    def create_single_layer(name, x, h, activation, first):
+    def create_single_layer(name, x, h, activation, layer):
         """This method creates a single layer and returns
         the combined output.
 
@@ -154,14 +136,21 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
             x: The input from the outside
             h: The previous hidden state
             activation: The activation function to use
-            first: True, if it is the first in a cell.
+            layer: The number of the layer
         """
         with tf.variable_scope(name, reuse=True):
 
-            fp = tf.get_variable("W") @ x if first else 0
+            # build up the network
             R = tf.get_variable("R")
             b = tf.get_variable("b")
-            return activation(fp + R @ h + b)
+            term = R @ h + b
+
+            # first layer gets input
+            if layer == 0:
+                W = tf.get_variable("W")
+                term = W @ x + term
+
+            return activation(term)
 
     def init_cell(self, name):
         """This method creates the parameters for a cell with
@@ -176,29 +165,30 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
             for i in range(self.config['recurrence_depth']):
 
                 # init the layers appropriately
-                self.init_highway_layer(str(i), i == 0)
+                self.init_rec_highway_layer(i)
 
-    def create_cell(self, name, x, h_state, num_cell):
+    def create_cell(self, name, x, h):
         """This method creates a LSTM cell. It basically uses the
         previously initialized weights.
 
         Args:
+            name: The name for this cell, e.g. 1
             x: The input to the layer.
-            h_state: The hidden input to the layer.
+            h: The hidden input to the layer.
 
         Returns:
             new_h: The new hidden vector
         """
-        [h] = h_state
 
         with tf.variable_scope(name, reuse=True):
 
-            it_h = h
+            it_h = h[0]
 
             # create as much cells as recurrent depth is set to
             for i in range(self.config['recurrence_depth']):
+
                 # init the layers appropriately
-                it_h = self.create_highway_layer(str(i), x, it_h, i)
+                it_h = self.create_rec_highway_layer(i, x, it_h)
 
         # pass back both states
         return [it_h]

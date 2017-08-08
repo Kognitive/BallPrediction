@@ -24,7 +24,7 @@ import numpy as np
 import tensorflow as tf
 
 from src.models.RecurrentPredictionModel import RecurrentPredictionModel
-
+from src.models.HighwayNetwork import HighwayNetwork
 
 class RecurrentNeuralNetwork(RecurrentPredictionModel):
     """This model represents a standard recurrent neural network."""
@@ -63,7 +63,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # init some variables
             O = tf.get_variable("O", [self.config['num_input'], self.config['num_hidden']], dtype=tf.float32, initializer=self.weights_initializer)
-            self.init_pre_processing_layer()
+            highway_network = HighwayNetwork(config)
 
             # init combined cells
             for k in range(config['num_stacks']):
@@ -99,13 +99,18 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             for x_in in unstacked_x:
 
                 # create a cell
-                processed_x_in = self.create_pre_processing_layer(x_in)
+                processed_x_in = highway_network.get_graph(x_in)
 
                 # stack them up
                 for k in range(config['num_stacks']):
                     h[k] = self.create_cell(str(k), processed_x_in, h[k])
 
-            self.target_y = O @ h[config['num_stacks'] - 1][0]
+            # simply build up the sum for all stacked cells in the end
+            summed_h = h[0][0]
+            for k in range(1, config['num_stacks']):
+                summed_h += h[k][0]
+
+            self.target_y = O @ summed_h
 
             # first of create the reduced squared error
             red_squared_err = tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0)
@@ -119,18 +124,22 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # here comes the step model
             self.step_x = tf.placeholder(tf.float32, [config['num_input'], 1], name="step_x")
-            step_h = list()
+            self.step_h = list()
             for k in range(config['num_stacks']):
-                step_h.append(self.get_step_h())
+                self.step_h.append(self.get_step_h())
 
             # the model
-            step_pre_processed_x_in = self.create_pre_processing_layer(self.step_x)
+            step_pre_processed_x_in = highway_network.get_graph(self.step_x)
 
             self.step_out_h = list()
             for k in range(config['num_stacks']):
-                step_h[k] = self.create_cell(str(k), step_pre_processed_x_in, step_h[k])
+                self.step_h[k] = self.create_cell(str(k), step_pre_processed_x_in, self.step_h[k])
 
-            self.step_y = O @ step_h[config['num_stacks'] - 1][0]
+            step_summed_h = self.step_h[0][0]
+            for k in range(1, config['num_stacks']):
+                step_summed_h += self.step_h[k][0]
+
+        self.step_y = O @ step_summed_h
 
         # state vars
         self.current_h = self.get_current_h()
@@ -184,50 +193,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """This method savs the model at the specified checkpoint."""
         self.saver.save(self.sess, self.config['log_dir'] + "model.ckpt", self.global_step)
 
-    def init_pre_processing_layer(self):
-        """This method basically create a fully connected network using the
-        passed structure."""
-
-        with tf.variable_scope("pre_processing", reuse=None):
-
-            # iterate over the structure
-            struct_len = len(self.config['pre_process_structure'])
-            in_layer = self.config['num_input']
-
-            # iterate over the whole structure and consequently create the
-            # corresponding weights
-            for k in range(struct_len):
-
-                # create the correct values
-                out_layer = self.config['pre_process_structure'][k]
-                tf.get_variable("W" + str(k), [out_layer, in_layer], dtype=tf.float32, initializer=self.weights_initializer)
-                tf.get_variable("b" + str(k), [out_layer, 1], dtype=tf.float32, initializer=self.bias_initializer)
-                in_layer = out_layer
-
-            # create the appropriate weights
-            out_layer = self.config['num_hidden']
-            tf.get_variable("W" + str(struct_len), [out_layer, in_layer], dtype=tf.float32, initializer=self.weights_initializer)
-            tf.get_variable("b" + str(struct_len), [out_layer, 1], dtype=tf.float32, initializer=self.bias_initializer)
-
-    def create_pre_processing_layer(self, x):
-        """This method initializes a pre processing network.
-
-        Args:
-            x: The input to the pre processing layer."""
-
-        with tf.variable_scope("pre_processing", reuse=True):
-
-            # determine first of all the depth of the network
-            struct_len = len(self.config['pre_process_structure'])
-            tree = x
-
-            # simply connect all layers
-            for k in range(struct_len):
-                tree = tf.nn.relu(tf.get_variable("W" + str(k)) @ tree + tf.get_variable("b" + str(k)))
-
-            # pass back the network
-            return tf.nn.relu(tf.get_variable("W" + str(struct_len)) @ tree + tf.get_variable("b" + str(struct_len)))
-
     def create_minimizer(self, learning_rate, error, global_step):
         """This method creates the correct optimizer."""
 
@@ -240,7 +205,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             minimizer = tf.train.MomentumOptimizer(learning_rate, self.config['momentum'], use_nesterov=True)
 
         elif str_minimizer == 'adam':
-            minimizer = tf.train.AdamOptimizer(learning_rate)
+            minimizer = tf.train.AdamOptimizer()
 
         elif str_minimizer == 'rmsprop':
             minimizer = tf.train.RMSPropOptimizer(learning_rate)
