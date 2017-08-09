@@ -33,7 +33,7 @@ class HighwayNetwork:
             config:
                 num_input: The number of the inputs
                 num_intermediate: The number of neurons for each highway layer
-                num_hidden: The number of the output layer for this pre processing network.
+                num_output: The number of the output layer for this pre processing network.
                 num_preprocess_layers: The number of highway layers
                 preprocess_coupled_gates: True, if the gates should be coupled
                 preprocess_activation: The activation for the FC layers
@@ -50,7 +50,7 @@ class HighwayNetwork:
 
             I = self.config['num_input']
             H = self.config['num_intermediate']
-            O = self.config['num_hidden']
+            O = self.config['num_output']
 
             tf.get_variable("W_in", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
             tf.get_variable("b_in", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)

@@ -56,61 +56,101 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
         config['unique_name'] = "RHN_" + config['unique_name']
         super().__init__(config)
 
-    def get_h(self):
-        """Gets a reference to the step h."""
-        return [tf.zeros([self.config['num_hidden'], 1], tf.float32)]
+    def get_h(self, stack):
+        """Creates a list of tensors representing the hidden state of one cell."""
 
-    def get_step_h(self):
-        """Retrieve the step h"""
-        return [tf.placeholder(tf.float32, [self.config['num_hidden'], 1], name="step_h")]
+        return [tf.get_variable("hidden_" + str(stack), [self.config['num_hidden'], 1],
+                                dtype=tf.float32,
+                                initializer=self.bias_initializer)
+                if self.config['learnable_hidden_states']
+                else tf.zeros([self.config['num_hidden'], 1], dtype=tf.float32)]
 
-    def get_current_h(self):
-        """Deliver current h"""
-        return [np.zeros([self.config['num_hidden'], 1])]
-
-    def init_rec_highway_layer(self, layer):
-        """This method initializes the weights for a layer with the
-        given name.
-
-        Args:
-            layer: The number of the layer itself..
-            first: Specifies whether this is the first highway layer
-        """
-
-        with tf.variable_scope(str(layer), reuse=None):
-
-            if not self.config['coupled_gates']:
-                self.init_single_layer("C", layer)
-
-            self.init_single_layer("H", layer)
-            self.init_single_layer("T", layer)
-
-    def init_single_layer(self, name, layer):
-        """This method creates a single layer.
+    def init_single_layer(self, name, stack, layer):
+        """This method initializes the weights for a single layer, which gets
+        used subsequently to specify one gate, e.g. C, H, T.
 
         Args:
             name: The name of the layer
+            stack: The number of the current stack
             layer: The number of the layer
         """
+
         with tf.variable_scope(name, reuse=None):
 
             # extract parameters
             H = self.config['num_hidden']
 
+            # Input is only received by first layer
             if layer == 0:
-                tf.get_variable("W", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
+                tf.get_variable("WX", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
+
+            # The hidden state of the previous stack is only available, when there
+            # is a next state
+            if layer == 0 and stack != 0:
+                tf.get_variable("WH", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
 
             tf.get_variable("R", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
             tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
-    def create_rec_highway_layer(self, layer, x, h):
-        """This method creates one layer, it therefore needs a activation
-        function, the name as well as the inputs to the layer.
+    @staticmethod
+    def create_single_layer(name, x, h_own, h_prev, activation, stack, layer):
+        """This method creates a single layer and returns
+        the combined output.
 
         Args:
+            name: The name of the layer
+            x: The input from the outside
+            h_own: The previous internal hidden state
+            h_prev: The hidden state from the the previous stack
+            activation: The activation function to use
+            stack: The number of the current stack
+            layer: The number of the layer
+        """
+
+        with tf.variable_scope(name, reuse=True):
+
+            # build up the network
+            R = tf.get_variable("R")
+            b = tf.get_variable("b")
+            term = R @ h_own + b
+
+            if layer == 0 and stack != 0:
+                WH = tf.get_variable("WH")
+                term = WH @ h_prev + term
+
+            # first layer gets input
+            if layer == 0:
+                WX = tf.get_variable("WX")
+                term = WX @ x + term
+
+            return activation(term)
+
+    def init_rec_highway_layer(self, stack, layer):
+        """This method initializes the weights for the specified layer.
+
+        Args:
+            stack: The number of the current stack.
+            layer: The number of the layer itself.
+        """
+
+        with tf.variable_scope(str(layer), reuse=None):
+
+            if not self.config['coupled_gates']:
+                self.init_single_layer("C", stack, layer)
+
+            self.init_single_layer("H", stack, layer)
+            self.init_single_layer("T", stack, layer)
+
+    def create_rec_highway_layer(self, stack, layer, x, h_own, h_prev):
+        """This creates one recursive highway layer, with the previously
+        initialized weights.
+
+        Args:
+            stack: The number of the current stack
             layer: The number of the layer
             x: The input state
-            h: The hidden state from the previous layer.
+            h_own: The hidden state for this unit.
+            h_prev: The hidden state from the previous stacked cell
 
         Returns:
             The output for this layer
@@ -119,76 +159,52 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
         with tf.variable_scope(str(layer), reuse=True):
 
             # The input to the layer unit
-            H = self.create_single_layer("H", x, h, self.config['h_node_activation'], layer)
-            T = self.create_single_layer("T", x, h, tf.sigmoid, layer)
-            C = tf.constant(1.0) - T if self.config['coupled_gates'] else self.create_single_layer("C", x, h, tf.sigmoid, layer)
+            H = self.create_single_layer("H", x, h_own, h_prev, self.config['h_node_activation'], stack, layer)
+            T = self.create_single_layer("T", x, h_own, h_prev, tf.sigmoid, stack, layer)
+            C = tf.constant(1.0) - T if self.config['coupled_gates'] \
+                else self.create_single_layer("C", x, h_own, h_prev, tf.sigmoid, stack, layer)
 
             # create the variables only the first times
-            return T * H + C * h
+            return T * H + C * h_own
 
-    @staticmethod
-    def create_single_layer(name, x, h, activation, layer):
-        """This method creates a single layer and returns
-        the combined output.
+    def init_cell(self, stack):
+        """This method initializes the variables for the specified stack cell
 
         Args:
-            name: The name of the layer
-            x: The input from the outside
-            h: The previous hidden state
-            activation: The activation function to use
-            layer: The number of the layer
+            stack: The number of the stacked cell
         """
-        with tf.variable_scope(name, reuse=True):
-
-            # build up the network
-            R = tf.get_variable("R")
-            b = tf.get_variable("b")
-            term = R @ h + b
-
-            # first layer gets input
-            if layer == 0:
-                W = tf.get_variable("W")
-                term = W @ x + term
-
-            return activation(term)
-
-    def init_cell(self, name):
-        """This method creates the parameters for a cell with
-        the given name
-
-        Args:
-            name: The name for this cell, e.g. 1
-        """
-        with tf.variable_scope(name, reuse=None):
+        with tf.variable_scope(str(stack), reuse=None):
 
             # create as much cells as recurrent depth is set to
             for i in range(self.config['recurrence_depth']):
 
                 # init the layers appropriately
-                self.init_rec_highway_layer(i)
+                self.init_rec_highway_layer(stack, i)
 
-    def create_cell(self, name, x, h):
-        """This method creates a LSTM cell. It basically uses the
-        previously initialized weights.
+    def create_cell(self, stack, x, h_own, h_prev):
+        """This method creates a RHN cell.
 
         Args:
-            name: The name for this cell, e.g. 1
+            stack: The number of the stacked cell
             x: The input to the layer.
-            h: The hidden input to the layer.
+            h_own: The hidden input to the layer
+            h_prev: The hidden output of the previous stack cell.
 
         Returns:
-            new_h: The new hidden vector
+            Effectively a list with one element, where it represents
+            the hidden output of this cell.
         """
 
-        with tf.variable_scope(name, reuse=True):
+        with tf.variable_scope(str(stack), reuse=True):
 
-            it_h = h[0]
+            it_h = h_own[0]
+            prev_h = h_prev[0]
 
             # create as much cells as recurrent depth is set to
             for i in range(self.config['recurrence_depth']):
 
                 # init the layers appropriately
-                it_h = self.create_rec_highway_layer(i, x, it_h)
+                it_h = self.create_rec_highway_layer(stack, i, x, it_h, prev_h)
 
         # pass back both states
         return [it_h]

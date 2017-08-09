@@ -68,26 +68,32 @@ class Configurations:
             config['unique_name'] = "StackRecurrentHighwayNetwork"
             config['seed'] = 3
 
-            config['num_hidden'] = 64
+            config['num_hidden'] = 32
             config['num_layers'] = 24
-            config['num_stacks'] = 5
-            config['recurrence_depth'] = 10
+            config['num_stacks'] = 3
+            config['recurrence_depth'] = 8
             config['h_node_activation'] = tf.nn.tanh
+
+            config['num_mdn_gaussian'] = 21
 
             config['minimizer'] = 'adam'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.05
+            config['lr_rate'] = 0.0001
             config['lr_decay_steps'] = 100
-            config['lr_decay_rate'] = 0.9
+            config['lr_decay_rate'] = 0.85
 
+            config['learnable_hidden_states'] = False
             config['coupled_gates'] = True
             config['layer_normalization'] = False
             config['clip_norm'] = 0
 
+            # settings regarding the hidden-to-output network
+            config['activation_output_layer'] = tf.identity
+
             config['preprocess_h_node_activation'] = tf.nn.tanh
             config['preprocess_activation'] = lrelu
-            config['num_intermediate'] = 64
-            config['num_preprocess_layers'] = 5
+            config['num_intermediate'] = 16
+            config['num_preprocess_layers'] = 8
             config['preprocess_coupled_gates'] = True
 
         else:

@@ -59,11 +59,10 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         self.weights_initializer = tf.contrib.layers.variance_scaling_initializer(1.0, 'FAN_AVG', True, config['seed'])
         self.bias_initializer = tf.constant_initializer(0.0)
 
-        with tf.variable_scope(config['unique_name']) as scope:
+        with tf.variable_scope(config['unique_name']):
 
             # init some variables
-            O = tf.get_variable("O", [self.config['num_input'], self.config['num_hidden']], dtype=tf.float32, initializer=self.weights_initializer)
-            highway_network = HighwayNetwork(config)
+            self.pre_highway_network = self.get_preprocess_network()
 
             # init combined cells
             for k in range(config['num_stacks']):
@@ -87,30 +86,15 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             # define the memory state
             self.h = list()
             for k in range(config['num_stacks']):
-                self.h.append(self.get_h())
+                self.h.append(self.get_h(k))
 
-            # unstack the input
+            # Unstack the input itself
             unstacked_x = tf.unstack(self.x, axis=1)
 
-            # use for dynamic
-            h = self.h
-
-            # unfold the cell
-            for x_in in unstacked_x:
-
-                # create a cell
-                processed_x_in = highway_network.get_graph(x_in)
-
-                # stack them up
-                for k in range(config['num_stacks']):
-                    h[k] = self.create_cell(str(k), processed_x_in, h[k])
-
-            # simply build up the sum for all stacked cells in the end
-            summed_h = h[0][0]
-            for k in range(1, config['num_stacks']):
-                summed_h += h[k][0]
-
-            self.target_y = O @ summed_h
+            # Combine all 3 networks to one
+            processed_unstacked_x = self.get_input_to_hidden_network(unstacked_x)
+            h = self.get_hidden_to_hidden_network(config, processed_unstacked_x)
+            self.target_y = self.get_hidden_to_output_network(h)
 
             # first of create the reduced squared error
             red_squared_err = tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0)
@@ -119,30 +103,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             self.error = 0.5 * tf.reduce_mean(red_squared_err, axis=0)
             self.a_error = tf.reduce_mean(tf.sqrt(red_squared_err), axis=0)
             self.minimizer = self.create_minimizer(self.learning_rate, self.error, self.global_step)
-
-            # ------------------------------ EVALUATION ---------------------------------
-
-            # here comes the step model
-            self.step_x = tf.placeholder(tf.float32, [config['num_input'], 1], name="step_x")
-            self.step_h = list()
-            for k in range(config['num_stacks']):
-                self.step_h.append(self.get_step_h())
-
-            # the model
-            step_pre_processed_x_in = highway_network.get_graph(self.step_x)
-
-            self.step_out_h = list()
-            for k in range(config['num_stacks']):
-                self.step_h[k] = self.create_cell(str(k), step_pre_processed_x_in, self.step_h[k])
-
-            step_summed_h = self.step_h[0][0]
-            for k in range(1, config['num_stacks']):
-                step_summed_h += self.step_h[k][0]
-
-        self.step_y = O @ step_summed_h
-
-        # state vars
-        self.current_h = self.get_current_h()
 
         # init the global variables initializer
         tf.set_random_seed(self.config['seed'])
@@ -168,17 +128,93 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         self.summaries = tf.summary.merge_all()
         self.sess.run(init)
 
-    def get_h(self):
+    def get_hidden_to_hidden_network(self, config, processed_unstacked_x):
+
+        # use for dynamic
+        h = self.h
+
+        # unfold the cell
+        for x_in in processed_unstacked_x:
+
+            # create a cell
+            h[0] = self.create_cell(0, x_in, h[0], [None])
+
+            # stack them up
+            for k in range(1, config['num_stacks']):
+                h[k] = self.create_cell(k, x_in, h[k], h[k - 1])
+
+        return h
+
+    def get_input_to_hidden_network(self, unstacked_x):
+        """This method should take a list of input variables and
+        process them through the same highway network.
+
+        Args:
+            unstacked_x: The list of input variables.
+
+        Returns
+            A list of processed variables.
+
+        """
+        return [self.pre_highway_network.get_graph(x_in) for x_in in unstacked_x]
+
+    def get_hidden_to_output_network(self, h):
+        """This method creates the hidden to output layer.
+
+        Args:
+            h: A list of list, containing the hidden states for each layer.
+
+        Returns:
+            The output layer itself.
+        """
+
+        # Create the hidden to output layer
+        with tf.variable_scope("hidden_to_output"):
+
+            # Initialize the weights used for the output layer
+            pre_target_h_weights = list()
+            pre_target_h_bias = tf.get_variable("b", [self.config['num_output'], 1],
+                                                dtype=tf.float32,
+                                                initializer=self.bias_initializer)
+
+            for k in range(self.config['num_stacks']):
+                pre_target_h_weights.append(tf.get_variable("W" + str(k),
+                                                            [self.config['num_output'], self.config['num_hidden']],
+                                                            dtype=tf.float32,
+                                                            initializer=self.weights_initializer))
+
+            # For an easier propagation of the gradient, we want to connect the
+            # outputs of all hidden units to the final output. To do so we multiply
+            # the previously created matrices with each hidden vector
+            pre_target_y = pre_target_h_weights[0] @ h[0][0]
+            for k in range(1, self.config['num_stacks']):
+
+                # sum them all up using the weight matrices
+                pre_target_y += pre_target_h_weights[k] @ h[k][0]
+
+            # finally combine them to the target vector
+            return self.config['activation_output_layer'](pre_target_y + pre_target_h_bias)
+
+    def get_preprocess_network(self):
+        """This method delivers the pre processing network."""
+
+        # create the configuration for the pre processing network
+        highway_conf = {
+            'num_input': self.config['num_input'],
+            'num_intermediate': self.config['num_intermediate'],
+            'num_output': self.config['num_hidden'],
+            'num_preprocess_layers': self.config['num_preprocess_layers'],
+            'preprocess_coupled_gates': self.config['preprocess_coupled_gates'],
+            'preprocess_activation': self.config['preprocess_activation'],
+            'preprocess_h_node_activation': self.config['preprocess_h_node_activation'],
+            'seed': self.config['seed']
+        }
+
+        return HighwayNetwork(highway_conf)
+
+    def get_h(self, stack):
         """Gets a reference to the step h."""
         raise NotImplementedError("Get the current h")
-
-    def get_step_h(self):
-        """Retrieve the step h"""
-        raise NotImplementedError("Retrieve the step hidden state.")
-
-    def get_current_h(self):
-        """Deliver current h"""
-        raise NotImplementedError("Retrieve the current hidden state.")
 
     def write_summaries(self, summary, test=False):
         """Depending on the parameter either a test summary or train summary is written."""
@@ -232,57 +268,24 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         return trainer
 
-    def init_cell(self, name):
-        """This method should initialize one cell.
+    def init_cell(self, stack):
+        """This method initializes the variables for the specified stack cell
 
         Args:
-            name: The name of the cell.
+            stack: The number of the stacked cell
         """
         raise NotImplementedError("Please implement init_cell")
 
-    def create_cell(self, name, x, h):
-        """This method creates a RNN cell. It basically uses the
-        previously initialized weights.
+    def create_cell(self, stack, x, h_own, h_prev):
+        """This method creates a RHN cell.
 
-        [h, s] = h_state
-            new_h: The new hidden vector
+        Args:
+            stack: The number of the stacked cell
+            x: The input to the layer.
+            h_own: The hidden input to the layer
+            h_prev: The hidden output of the previous stack cell.
         """
         raise NotImplementedError("Please implement create_cell")
-
-    @staticmethod
-    def lrelu_activation(x):
-        """This method creates a leaky relu function.
-
-        Args:
-            x: The input to the layer
-
-        Returns:
-            The layer after the activation is applied.
-        """
-
-        return tf.maximum(x, tf.constant(0.01) * x)
-
-    def init_step(self, x):
-
-        """This method is required to set the initial hidden state."""
-        self.current_h = x
-
-    def step(self, x):
-        """This method can be used to perform a step on the model.
-
-        Args:
-            x: The input at the current step.
-
-        Returns:
-            The result obtained from exploiting the inner model.
-        """
-
-        dic = dict(zip(self.step_h, self.current_h))
-        dic.update({self.step_x: x})
-        res = self.sess.run(self.step_y, dic)
-        self.current_h = self.sess.run(self.step_out_h, dic)
-
-        return res
 
     def train(self, trajectories, target_trajectories, steps):
         """This method retrieves a list of trajectories. It can further
