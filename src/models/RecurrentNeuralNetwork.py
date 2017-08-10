@@ -26,6 +26,7 @@ import tensorflow as tf
 from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 from src.models.HighwayNetwork import HighwayNetwork
 
+
 class RecurrentNeuralNetwork(RecurrentPredictionModel):
     """This model represents a standard recurrent neural network."""
 

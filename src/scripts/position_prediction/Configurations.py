@@ -71,14 +71,14 @@ class Configurations:
             config['num_hidden'] = 32
             config['num_layers'] = 24
             config['num_stacks'] = 3
-            config['recurrence_depth'] = 8
+            config['recurrence_depth'] = 4
             config['h_node_activation'] = tf.nn.tanh
 
             config['num_mdn_gaussian'] = 21
 
-            config['minimizer'] = 'adam'
+            config['minimizer'] = 'momentum'
             config['momentum'] = 0.95
-            config['lr_rate'] = 0.0001
+            config['lr_rate'] = 0.0005
             config['lr_decay_steps'] = 100
             config['lr_decay_rate'] = 0.85
 
@@ -93,7 +93,7 @@ class Configurations:
             config['preprocess_h_node_activation'] = tf.nn.tanh
             config['preprocess_activation'] = lrelu
             config['num_intermediate'] = 16
-            config['num_preprocess_layers'] = 8
+            config['num_preprocess_layers'] = 4
             config['preprocess_coupled_gates'] = True
 
         else:

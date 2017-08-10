@@ -32,7 +32,7 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
     features the LSTM with forget gates."""
 
     def __init__(self, config):
-        """Constructs a new LSTM.
+        """Constructs a new RHN.
 
         Args:
             config: The configuration parameters
