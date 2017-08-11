@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import numpy as np
 import tensorflow as tf
 
 
@@ -42,6 +41,8 @@ class RecurrentHighWayNetworkCell:
                 t_activation: The activation function of the T gate (Default = tf.sigmoid)
                 c_activation: The activation function of the C gate (Default = tf.sigmoid)
 
+                layer_normalization: True, if you want layer normalization to be activated.
+
                 num_input: The number of input units
                 num_hidden: The number of hidden units
 
@@ -60,6 +61,7 @@ class RecurrentHighWayNetworkCell:
         if 'learn_hidden' not in config: config['learn_hidden'] = False
         if 't_activation' not in config: config['t_activation'] = tf.sigmoid
         if 'c_activation' not in config: config['c_activation'] = tf.sigmoid
+        if 'layer_normalization' not in config: config['layer_normalization'] = False
         if 'seed' not in config: config['seed'] = None
 
         # save the configuration for internal usage
@@ -79,7 +81,7 @@ class RecurrentHighWayNetworkCell:
     def __init_structure(self):
         """This method initializes the variables for the specified stack cell"""
 
-        self.__init_hidden_state()
+        self.hidden_state = self.__init_hidden_state(self.bias_initializer)
 
         # create as much cells as recurrent depth is set to
         for i in range(self.config['num_layers']):
@@ -126,16 +128,23 @@ class RecurrentHighWayNetworkCell:
             if layer == 0 and not self.config['head_of_stack']:
                 tf.get_variable("WH", [num_hidden, num_hidden], dtype=tf.float32, initializer=weight_init)
 
+            # check whether we have to add layer normalization
+            if self.config['layer_normalization']:
+                tf.get_variable("g", [num_hidden, 1], dtype=tf.float32, initializer=weight_init)
+
             tf.get_variable("R", [num_hidden, num_hidden], dtype=tf.float32, initializer=weight_init)
             tf.get_variable("b", [num_hidden, 1], dtype=tf.float32, initializer=bias_init)
 
     def __init_hidden_state(self, init):
         """Initialize the hidden state of this cell."""
 
-        return tf.get_variable("hidden_state", [self.config['num_hidden'], 1],
+        return [tf.get_variable("hidden_state", [self.config['num_hidden'], 1],
                                dtype=tf.float32,
                                trainable=self.config['learn_hidden'],
-                               initializer=init)
+                               initializer=init)]
+
+    def get_hidden_state(self):
+        return self.hidden_state
 
     def __create_single_layer(self, name, x, h_own, h_prev, activation, layer):
         """This method creates a single layer and returns
@@ -154,8 +163,7 @@ class RecurrentHighWayNetworkCell:
 
             # build up the network
             R = tf.get_variable("R")
-            b = tf.get_variable("b")
-            term = R @ h_own + b
+            term = R @ h_own
 
             if layer == 0 and not self.config['head_stack']:
                 WH = tf.get_variable("WH")
@@ -165,6 +173,17 @@ class RecurrentHighWayNetworkCell:
             if layer == 0:
                 WX = tf.get_variable("WX")
                 term = WX @ x + term
+
+            if self.config['layer_normalization']:
+                mean = tf.reduce_sum(term, axis=0) / self.config['num_hidden']
+                variance = tf.sqrt(tf.reduce_sum(tf.pow(term - mean, 2)) / self.config['num_hidden'])
+
+                g = tf.get_variable('g')
+                term = (g / variance) * (term - mean)
+
+            # append the bias
+            b = tf.get_variable("b")
+            term += b
 
             return activation(term)
 
@@ -182,7 +201,7 @@ class RecurrentHighWayNetworkCell:
             The output for this layer
         """
 
-        with tf.variable_scope(str(layer), reuse=True):
+        with tf.variable_scope("layer_{}".format(layer), reuse=True):
 
             # The input to the layer unit
             H = self.__create_single_layer("H", x, h_own, h_prev, self.config['h_activation'], layer)
@@ -193,11 +212,10 @@ class RecurrentHighWayNetworkCell:
             # create the variables only the first times
             return T * H + C * h_own
 
-    def __create_cell(self, stack, x, h_own, h_prev):
+    def create_cell(self, x, h_own, h_prev):
         """This method creates a RHN cell.
 
         Args:
-            stack: The number of the stacked cell
             x: The input to the layer.
             h_own: The hidden input to the layer
             h_prev: The hidden output of the previous stack cell.
@@ -207,15 +225,15 @@ class RecurrentHighWayNetworkCell:
             the hidden output of this cell.
         """
 
-        with tf.variable_scope(str(stack), reuse=True):
+        with tf.variable_scope(self.config['cell_name'], reuse=True):
 
-            it_h = h_own
+            [it_h] = h_own
 
             # create as much cells as recurrent depth is set to
-            for i in range(self.config['recurrence_depth']):
+            for i in range(self.config['num_layers']):
 
                 # init the layers appropriately
                 it_h = self.__create_highway_layer(i, x, it_h, h_prev)
 
         # pass back both states
-        return it_h
+        return [it_h]

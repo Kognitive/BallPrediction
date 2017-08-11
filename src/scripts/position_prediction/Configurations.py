@@ -24,7 +24,7 @@ class Configurations:
         """
 
         config = {}
-        config['episodes'] = 100
+        config['episodes'] = 100000
         config['steps_per_episode'] = 10
         config['steps_per_batch'] = 1
         config['batch_size'] = 256
@@ -68,15 +68,15 @@ class Configurations:
             config['unique_name'] = "StackRecurrentHighwayNetwork"
             config['seed'] = 3
 
-            config['num_hidden'] = 32
+            config['num_hidden'] = 128
             config['num_layers'] = 24
-            config['num_stacks'] = 3
-            config['recurrence_depth'] = 4
+            config['num_stacks'] = 12
+            config['recurrence_depth'] = 12
             config['h_node_activation'] = tf.nn.tanh
 
             config['num_mdn_gaussian'] = 21
 
-            config['minimizer'] = 'momentum'
+            config['minimizer'] = 'adam'
             config['momentum'] = 0.95
             config['lr_rate'] = 0.0005
             config['lr_decay_steps'] = 100
@@ -84,7 +84,7 @@ class Configurations:
 
             config['learnable_hidden_states'] = False
             config['coupled_gates'] = True
-            config['layer_normalization'] = False
+            config['layer_normalization'] = True
             config['clip_norm'] = 0
 
             # settings regarding the hidden-to-output network
@@ -92,8 +92,8 @@ class Configurations:
 
             config['preprocess_h_node_activation'] = tf.nn.tanh
             config['preprocess_activation'] = lrelu
-            config['num_intermediate'] = 16
-            config['num_preprocess_layers'] = 4
+            config['num_intermediate'] = 64
+            config['num_preprocess_layers'] = 10
             config['preprocess_coupled_gates'] = True
 
         else:

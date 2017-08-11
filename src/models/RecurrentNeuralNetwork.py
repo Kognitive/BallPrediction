@@ -25,6 +25,7 @@ import tensorflow as tf
 
 from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 from src.models.HighwayNetwork import HighwayNetwork
+from src.models.concrete.RecurrentHighWayNetworkCell import RecurrentHighWayNetworkCell
 
 
 class RecurrentNeuralNetwork(RecurrentPredictionModel):
@@ -65,9 +66,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             # init some variables
             self.pre_highway_network = self.get_preprocess_network()
 
-            # init combined cells
-            for k in range(config['num_stacks']):
-                self.init_cell(str(k))
+            # initialize all cells
+            self.cells = self.__init_all_cells()
 
             # --------------------------- TRAINING ----------------------------
 
@@ -85,9 +85,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             self.y = tf.placeholder(tf.float32, [config['num_input'], None], name="target")
 
             # define the memory state
-            self.h = list()
-            for k in range(config['num_stacks']):
-                self.h.append(self.get_h(k))
+            self.h = [cell.get_hidden_state() for cell in self.cells]
 
             # Unstack the input itself
             unstacked_x = tf.unstack(self.x, axis=1)
@@ -129,6 +127,28 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         self.summaries = tf.summary.merge_all()
         self.sess.run(init)
 
+    def __init_all_cells(self):
+
+        # create the common
+        cell_config = {}
+        cell_config['num_layers'] = self.config['recurrence_depth']
+        cell_config['coupled_gates'] = self.config['coupled_gates']
+        cell_config['learn_hidden'] = self.config['learnable_hidden_states']
+        cell_config['h_activation'] = self.config['h_node_activation']
+        cell_config['num_input'] = self.config['num_input']
+        cell_config['num_hidden'] = self.config['num_hidden']
+        cell_config['seed'] = self.config['seed']
+
+        # init combined cells
+        cells = list()
+        for k in range(self.config['num_stacks']):
+
+            cell_config['cell_name'] = str(k)
+            cell_config['head_of_stack'] = k == 0
+            cells.append(RecurrentHighWayNetworkCell(cell_config))
+
+        return cells
+
     def get_hidden_to_hidden_network(self, config, processed_unstacked_x):
 
         # use for dynamic
@@ -138,11 +158,11 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         for x_in in processed_unstacked_x:
 
             # create a cell
-            h[0] = self.create_cell(0, x_in, h[0], [None])
+            h[0] = self.cells[0].create_cell(x_in, h[0], [None])
 
             # stack them up
             for k in range(1, config['num_stacks']):
-                h[k] = self.create_cell(k, x_in, h[k], h[k - 1])
+                h[k] = self.cells[0].create_cell(x_in, h[k], h[k - 1])
 
         return h
 
@@ -213,10 +233,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         return HighwayNetwork(highway_conf)
 
-    def get_h(self, stack):
-        """Gets a reference to the step h."""
-        raise NotImplementedError("Get the current h")
-
     def write_summaries(self, summary, test=False):
         """Depending on the parameter either a test summary or train summary is written."""
 
@@ -268,25 +284,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             trainer = minimizer.apply_gradients(gradients, global_step=global_step)
 
         return trainer
-
-    def init_cell(self, stack):
-        """This method initializes the variables for the specified stack cell
-
-        Args:
-            stack: The number of the stacked cell
-        """
-        raise NotImplementedError("Please implement init_cell")
-
-    def create_cell(self, stack, x, h_own, h_prev):
-        """This method creates a RHN cell.
-
-        Args:
-            stack: The number of the stacked cell
-            x: The input to the layer.
-            h_own: The hidden input to the layer
-            h_prev: The hidden output of the previous stack cell.
-        """
-        raise NotImplementedError("Please implement create_cell")
 
     def train(self, trajectories, target_trajectories, steps):
         """This method retrieves a list of trajectories. It can further
