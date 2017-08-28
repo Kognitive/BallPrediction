@@ -54,14 +54,16 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # Perform the super call
         self.config = config
-        config['unique_name'] = "RNN_" + config['unique_name']
         super().__init__(config['unique_name'])
 
-        # save hyper parameters
-        self.weights_initializer = tf.contrib.layers.variance_scaling_initializer(1.0, 'FAN_AVG', True, config['seed'])
-        self.bias_initializer = tf.constant_initializer(0.0)
+        self.sess = tf.Session()
 
         with tf.variable_scope(config['unique_name']):
+
+            # save hyper parameters
+            self.weights_initializer = tf.contrib.layers.variance_scaling_initializer(1.0, 'FAN_AVG', True,
+                                                                                      config['seed'])
+            self.bias_initializer = tf.constant_initializer(0.0)
 
             # create a bernoulli distribution
             self.training_time = tf.placeholder(tf.bool, None, name="training_time")
@@ -74,14 +76,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # --------------------------- TRAINING ----------------------------
 
-            self.current_step = 0
             self.global_step = tf.Variable(0, trainable=False, name='global_step')
-            self.learning_rate = tf.train.exponential_decay(
-                self.config['lr_rate'],
-                self.global_step,
-                self.config['lr_decay_steps'],
-                self.config['lr_decay_rate'],
-                staircase=False)
+            self.global_episode = tf.Variable(0, trainable=False, name='global_episode')
 
             # create a tensor for the input
             self.x = tf.placeholder(tf.float32, [config['num_input'], config['num_layers'], None], name="input")
@@ -107,27 +103,36 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
                 self_y_out.append(self_x_in)
 
             # define the target y
-            self.target_y = tf.stack(self_y_out, axis=1)
+            self.target_y = tf.stack(self_y_out, axis=1, name="target_y")
 
             # first of create the reduced squared error
             red_squared_err = tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0), axis=0), axis=0)
 
             # So far we have got the model
             self.error = 0.5 * tf.reduce_mean(red_squared_err)
-            self.a_error = tf.reduce_mean(tf.sqrt(red_squared_err))
+            self.a_error = tf.reduce_mean(tf.sqrt(red_squared_err), name="a_error")
+
+            # increment global episode
+            self.inc_global_episode = tf.assign(self.global_episode, self.global_episode + 1,
+                                                name='inc_global_episode')
+
+            # create minimizer
+            self.learning_rate = tf.train.exponential_decay(
+                self.config['lr_rate'],
+                self.global_step,
+                self.config['lr_decay_steps'],
+                self.config['lr_decay_rate'],
+                staircase=False)
+
+            # create the minimizer
             self.minimizer = self.create_minimizer(self.learning_rate, self.error, self.global_step)
 
         # init the global variables initializer
         tf.set_random_seed(self.config['seed'])
-        init = tf.global_variables_initializer()
-        self.sess = tf.Session()
 
         # this represents the writers
         self.train_writer = tf.summary.FileWriter(config['log_dir'] + 'train', self.sess.graph)
         self.test_writer = tf.summary.FileWriter(config['log_dir'] + 'test', self.sess.graph)
-
-        # create saver, so training is not discarded
-        self.saver = tf.train.Saver()
 
         # create some summaries
         with tf.name_scope('summaries'):
@@ -139,6 +144,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # merge all summaries
         self.summaries = tf.summary.merge_all()
+
+        # init if not restored
+        init = tf.global_variables_initializer()
         self.sess.run(init)
 
     def __init_all_cells(self):
@@ -165,6 +173,16 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             cells.append(RecurrentHighWayNetworkCell(cell_config))
 
         return cells
+
+    def get_activation(self, name):
+        if name == 'tanh':
+            return tf.nn.tanh
+        elif name == 'sigmoid':
+            return tf.nn.sigmoid
+        elif name == 'identity':
+            return tf.identity
+        elif name == 'lrelu':
+            return lambda x: tf.maximum(x, 0.01 * x)
 
     def get_hidden_to_hidden_network(self, config, processed_unstacked_x, h_prev):
 
@@ -231,7 +249,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
                 pre_target_y += pre_target_h_weights[k] @ tf.nn.dropout(h[k], self.config['dropout_prob'])
 
             # finally combine them to the target vector
-            return self.config['activation_output_layer'](pre_target_y + pre_target_h_bias)
+            return self.get_activation(self.config['activation_output_layer'])(pre_target_y + pre_target_h_bias)
 
     def get_preprocess_network(self):
         """This method delivers the pre processing network."""
@@ -251,18 +269,33 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         return HighwayNetwork(highway_conf)
 
-    def write_summaries(self, summary, test=False):
+    def write_summaries(self, summary, test, episode):
         """Depending on the parameter either a test summary or train summary is written."""
 
         if test:
-            self.test_writer.add_summary(summary, self.current_step)
+            self.test_writer.add_summary(summary, episode)
 
         else:
-            self.train_writer.add_summary(summary, self.current_step)
+            self.train_writer.add_summary(summary, episode)
 
     def save(self, folder):
-        """This method savs the model at the specified checkpoint."""
-        self.saver.save(self.sess, self.config['log_dir'] + folder + "/model.ckpt", self.global_step)
+        """This method saves the model at the specified checkpoint."""
+        all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        all_values = self.sess.run(all_vars)
+
+        for k in range(len(all_values)):
+            np.save('{}{}/{}.npy'.format(self.config['log_dir'], folder, k), all_values[k])
+
+    def restore(self, folder):
+        """This method restores the model from the specified folder."""
+        all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+
+        assign_list = list()
+        for k in range(len(all_vars)):
+            tensor = np.load('{}{}/{}.npy'.format(self.config['log_dir'], folder, k))
+            assign_list.append(tf.assign(all_vars[k], tensor))
+
+        self.sess.run(tf.group(*assign_list))
 
     def create_minimizer(self, learning_rate, error, global_step):
         """This method creates the correct optimizer."""
@@ -296,10 +329,10 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             clipped_gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=self.config['clip_norm'])
 
             # define the trainer
-            trainer = minimizer.apply_gradients(zip(clipped_gradients, variables), global_step=global_step)
+            trainer = minimizer.apply_gradients(zip(clipped_gradients, variables), global_step=global_step, name='minimizer')
 
         else:
-            trainer = minimizer.apply_gradients(gradients, global_step=global_step)
+            trainer = minimizer.apply_gradients(gradients, global_step=global_step, name='minimizer')
 
         return trainer
 
@@ -319,8 +352,11 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         for k in range(steps):
             _, summary = self.sess.run([self.minimizer, self.summaries], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: True})
 
-    def inc_current_step(self):
-        self.current_step += 1
+    def inc_episode(self):
+        self.sess.run(self.inc_global_episode)
+
+    def get_episode(self):
+        return self.sess.run(self.global_episode)
 
     def validate(self, trajectories, target_trajectories, test=True):
         """This method basically validates the passed trajectories.
@@ -335,8 +371,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             The error on the passed trajectories
         """
 
-        aerror, summary = self.sess.run([self.a_error, self.summaries], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: False})
-        self.write_summaries(summary, test)
+        aerror, summary, episode = self.sess.run([self.a_error, self.summaries, self.global_episode], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: False})
+        self.write_summaries(summary, test, episode)
         return aerror
 
     def predict(self, trajectories):

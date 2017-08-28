@@ -5,8 +5,6 @@ from src.models.concrete.ClockworkRNN import ClockworkRNN
 
 import tensorflow as tf
 
-def lrelu(x): return tf.maximum(x, 0.01 * x)
-
 class Configurations:
     """This class can be used to obtain the configuration along with the model."""
 
@@ -25,7 +23,7 @@ class Configurations:
 
         config = {}
         config['episodes'] = 40000
-        config['steps_per_episode'] = 10
+        config['steps_per_episode'] = 1000
         config['steps_per_batch'] = 1
         config['batch_size'] = 1024
         config['num_input'] = 3
@@ -65,15 +63,15 @@ class Configurations:
             # create model and configuration
             model = RecurrentHighWayNetwork
 
-            config['unique_name'] = "StackRecurrentHighwayNetwork"
+            config['unique_name'] = "RHN"
             config['seed'] = 3
 
-            config['num_hidden'] = 64
-            config['num_layers'] = 20
+            config['num_hidden'] = 32
+            config['num_layers'] = 10
             config['num_layers_self'] = 25
             config['num_stacks'] = 3
             config['recurrence_depth'] = 4
-            config['h_node_activation'] = tf.nn.tanh
+            config['h_node_activation'] = 'tanh'
 
             config['num_mdn_gaussian'] = 21
 
@@ -91,11 +89,11 @@ class Configurations:
             config['dropout_prob'] = 1.0
 
             # settings regarding the hidden-to-output network
-            config['activation_output_layer'] = tf.identity
+            config['activation_output_layer'] = 'identity'
 
-            config['preprocess_h_node_activation'] = tf.nn.tanh
-            config['preprocess_activation'] = lrelu
-            config['num_intermediate'] = 32
+            config['preprocess_h_node_activation'] = 'tanh'
+            config['preprocess_activation'] = 'lrelu'
+            config['num_intermediate'] = 12
             config['num_preprocess_layers'] = 4
             config['preprocess_coupled_gates'] = True
 

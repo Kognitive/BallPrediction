@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import os
 import configparser
+from localconfig import config
 
 # import live plot
 from src.plots.LivePlot import LivePlot
@@ -35,6 +36,7 @@ from src.data_loader.concrete.SimDataLoader import SimDataLoader
 from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 from src.scripts.position_prediction.Configurations import Configurations
 from src.utils.Progressbar import Progressbar
+from src.models.RecurrentNeuralNetwork import RecurrentNeuralNetwork
 
 # Data Settings
 data_dir = 'sim_training_data/data_v1'
@@ -46,18 +48,29 @@ show_train_error = True
 # Format settings
 line_length = 80
 
+# the reload and the last timestamp
+reload = False
+last_timestamp = "2017-08-29_00-01-15"
+
 # ------------------------ SCRIPT -------------------------
 
 # define the line length for printing
 line = line_length * "-"
 print(line)
+print("Creating log directory")
 
 # create the timestamp
-timestamp = '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now())
+timestamp = '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now()) if not reload else last_timestamp
+
 old_output_dir = log_dir + "/"
 output_dir = log_dir + "/" + timestamp + "_RUNNING/"
 if not os.path.exists(output_dir):
+    if reload: raise RuntimeError("This timestamp can't be reloaded")
     os.makedirs(output_dir)
+
+if not os.path.exists(output_dir + "general"):
+    if reload: raise RuntimeError("This timestamp can't be reloaded")
+    os.makedirs(output_dir + "general")
 
 # create the model folders
 if not os.path.exists(output_dir + "mod_tr"):
@@ -67,9 +80,34 @@ if not os.path.exists(output_dir + "mod_va"):
     os.makedirs(output_dir + "mod_va")
 
 # retrieve the model
-config, chosen_model = Configurations.get_configuration_with_model('rhn')
-config['log_dir'] = output_dir
-config['time_stamp'] = timestamp
+conf, chosen_model = Configurations.get_configuration_with_model('rhn')
+
+# check if it should be reloaded or not
+if not reload:
+
+    conf['log_dir'] = output_dir
+    conf['time_stamp'] = timestamp
+
+else:
+
+    print("Restoring Configuration")
+
+    # first of all restore the configuration
+    config.read(output_dir + 'configuration.ini')
+    conf = dict(config.items("Model"))
+
+# some debug printing
+print("Creating Model")
+
+# define the model using the parameters from top
+model = chosen_model(conf)
+model.init_params()
+
+print(line)
+
+# transformation parameters
+I = conf['num_layers']
+K = conf['num_layers_self']
 
 # load trajectories, split them up and transform them
 trajectories = loader.load_complete_data()
@@ -80,33 +118,21 @@ num = int(np.ceil(num_trajectories / 5))
 slices_va = permutation[:num]
 slices_tr = permutation[num:]
 
-# transformation parameters
-I = config['num_layers']
-K = config['num_layers_self']
-
 # transform the data
 validation_set_in, validation_set_out = FeedForwardDataTransformer.transform([trajectories[i] for i in slices_va], I, K)
 training_set_in, training_set_out = FeedForwardDataTransformer.transform([trajectories[i] for i in slices_tr], I, K)
 
 # define the size of training and validation set
-config['tr_size'] = np.size(training_set_in, 2)
-config['va_size'] = np.size(validation_set_in, 2)
-
-# some debug printing
-print(line)
-print("Creating Model")
-
-# define the model using the parameters from top
-model = chosen_model(config)
-model.init_params()
+conf['tr_size'] = np.size(training_set_in, 2)
+conf['va_size'] = np.size(validation_set_in, 2)
 
 # write the config
 parser = configparser.ConfigParser()
-parser.add_section(model.name)
+parser.add_section("Model")
 
 # add all configuration parameters
-for key in config.keys():
-    parser.set(model.name, key, str(config[key]))
+for key in conf.keys():
+    parser.set("Model", key, str(conf[key]))
 
 # and write to disk
 with open(output_dir + "configuration.ini", 'w') as cfg_file:
@@ -118,7 +144,7 @@ print("Model configuration saved on disk.")
 print(line)
 
 # define the overall error
-episodes = config['episodes']
+episodes = conf['episodes']
 validation_error = np.zeros(episodes)
 train_error = np.zeros(episodes)
 overall_error = np.zeros([2, episodes])
@@ -154,38 +180,51 @@ for k in range(num_traj * 2):
 plt.ion()
 
 # sample some trajectories to display
-val_display_slices = np.random.permutation(config['va_size'])[:num_traj]
-tr_display_slices = np.random.permutation(config['tr_size'])[:num_traj]
+val_display_slices = np.random.permutation(conf['va_size'])[:num_traj]
+tr_display_slices = np.random.permutation(conf['tr_size'])[:num_traj]
+
+if reload: model.restore('general')
+s_episode = model.get_episode()
+
+if reload:
+    validation_error[0:s_episode] = np.load(conf['log_dir'] + 'general/va_error.npy')
+    train_error[0:s_episode] = np.load(conf['log_dir'] + 'general/tr_error.npy')
 
 # set the range
-for episode in range(episodes):
+for episode in range(s_episode, episodes):
 
     # execute as much episodes
-    for step in range(config['steps_per_episode']):
+    for step in range(conf['steps_per_episode']):
 
         # sample them randomly according to the batch size
-        slices = np.random.randint(0, config['tr_size'], config['batch_size'])
+        slices = np.random.randint(0, conf['tr_size'], conf['batch_size'])
 
         # train the model
-        model.train(training_set_in[:, :, slices], training_set_out[:, :, slices], config['steps_per_batch'])
+        model.train(training_set_in[:, :, slices], training_set_out[:, :, slices], conf['steps_per_batch'])
 
-    model.inc_current_step()
+    # increase the episode
+    model.inc_episode()
 
     # calculate validation error
     validation_error[episode] = model.validate(validation_set_in, validation_set_out, True)
     train_error[episode] = model.validate(training_set_in, training_set_out, False)
 
+    # save the model including the validation error and training error
+    model.save('general')
+    np.save(conf['log_dir'] + 'general/va_error.npy', validation_error[0:episode + 1])
+    np.save(conf['log_dir'] + 'general/tr_error.npy', train_error[0:episode + 1])
+
     # check if we have to update our best error
     if best_val_error > validation_error[episode]:
         best_val_episode = episode
         best_val_error = validation_error[episode]
-        model.save("mod_va")
+        model.save('mod_va')
 
         # check if we have to update our best error
     if best_tr_error > train_error[episode]:
         best_tr_episode = episode
         best_tr_error = train_error[episode]
-        model.save("mod_tr")
+        model.save('mod_tr')
 
     # draw the training error and validation error
     plt.figure(0)

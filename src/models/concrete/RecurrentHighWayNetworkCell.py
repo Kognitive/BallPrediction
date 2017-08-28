@@ -59,8 +59,8 @@ class RecurrentHighWayNetworkCell:
         if 'head_stack' not in config: config['head_stack'] = True
         if 'coupled_gates' not in config: config['coupled_gates'] = True
         if 'learn_hidden' not in config: config['learn_hidden'] = False
-        if 't_activation' not in config: config['t_activation'] = tf.sigmoid
-        if 'c_activation' not in config: config['c_activation'] = tf.sigmoid
+        if 't_activation' not in config: config['t_activation'] = 'sigmoid'
+        if 'c_activation' not in config: config['c_activation'] = 'sigmoid'
         if 'layer_normalization' not in config: config['layer_normalization'] = False
         if 'seed' not in config: config['seed'] = None
 
@@ -205,13 +205,23 @@ class RecurrentHighWayNetworkCell:
         with tf.variable_scope("layer_{}".format(layer), reuse=True):
 
             # The input to the layer unit
-            H = self.__create_single_layer("H", x, h_own, h_prev, self.config['h_activation'], layer)
-            T = self.__create_single_layer("T", x, h_own, h_prev, self.config['t_activation'], layer)
+            H = self.__create_single_layer("H", x, h_own, h_prev, self.get_activation(self.config['h_activation']), layer)
+            T = self.__create_single_layer("T", x, h_own, h_prev, self.get_activation(self.config['t_activation']), layer)
             C = tf.constant(1.0) - T if self.config['coupled_gates'] \
-                else self.__create_single_layer("C", x, h_own, h_prev, self.config['c_activation'], layer)
+                else self.__create_single_layer("C", x, h_own, h_prev, self.get_activation(self.config['c_activation']), layer)
 
             # create the variables only the first times
             return T * H + C * h_own
+
+    def get_activation(self, name):
+        if name == 'tanh':
+            return tf.nn.tanh
+        elif name == 'sigmoid':
+            return tf.nn.sigmoid
+        elif name == 'identity':
+            return tf.identity
+        elif name == 'lrelu':
+            return lambda x: tf.maximum(x, 0.01 * x)
 
     def create_cell(self, x, h_own, h_prev):
         """This method creates a RHN cell.

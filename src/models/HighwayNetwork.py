@@ -66,13 +66,13 @@ class HighwayNetwork:
         """Simply get the graph of this highway network."""
 
         with tf.variable_scope("preprocess_network", reuse=True):
-            tree = self.config['preprocess_activation'](tf.get_variable("W_in") @ x + tf.get_variable("b_in"))
+            tree = self.get_activation(self.config['preprocess_activation'])(tf.get_variable("W_in") @ x + tf.get_variable("b_in"))
 
             # init the high way layers as well
             for k in range(self.config['num_preprocess_layers']):
                 tree = self.create_highway_layer(k, tree)
 
-            return self.config['preprocess_activation'](tf.get_variable("W_out") @ tree + tf.get_variable("b_out"))
+            return self.get_activation(self.config['preprocess_activation'])(tf.get_variable("W_out") @ tree + tf.get_variable("b_out"))
 
     def init_highway_layer(self, layer):
         """This method initializes the weights for a layer with the
@@ -118,12 +118,22 @@ class HighwayNetwork:
 
         with tf.variable_scope(str(layer), reuse=True):
             # The input to the layer unit
-            H = self.create_single_layer("H", x, self.config['preprocess_h_node_activation'])
-            T = self.create_single_layer("T", x, tf.sigmoid)
-            C = tf.constant(1.0) - T if self.config['preprocess_coupled_gates'] else self.create_single_layer("C", x, tf.sigmoid)
+            H = self.create_single_layer("H", x, self.get_activation(self.config['preprocess_h_node_activation']))
+            T = self.create_single_layer("T", x, self.get_activation('sigmoid'))
+            C = tf.constant(1.0) - T if self.config['preprocess_coupled_gates'] else self.create_single_layer("C", x, self.get_activation('sigmoid'))
 
             # create the variables only the first times
             return tf.nn.dropout(T * H + C * x, self.config['dropout_prob'])
+
+    def get_activation(self, name):
+        if name == 'tanh':
+            return tf.nn.tanh
+        elif name == 'sigmoid':
+            return tf.nn.sigmoid
+        elif name == 'identity':
+            return tf.identity
+        elif name == 'lrelu':
+            return lambda x: tf.maximum(x, 0.01 * x)
 
     @ staticmethod
     def create_single_layer(name, x, activation):

@@ -53,7 +53,6 @@ class RecurrentHighWayNetwork(RecurrentNeuralNetwork):
         """
 
         # Perform the super call
-        config['unique_name'] = "RHN_" + config['unique_name']
         super().__init__(config)
 
     def get_h(self, stack):
