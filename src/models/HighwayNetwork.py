@@ -123,7 +123,7 @@ class HighwayNetwork:
             C = tf.constant(1.0) - T if self.config['preprocess_coupled_gates'] else self.create_single_layer("C", x, tf.sigmoid)
 
             # create the variables only the first times
-            return T * H + C * x
+            return tf.nn.dropout(T * H + C * x, self.config['dropout_prob'])
 
     @ staticmethod
     def create_single_layer(name, x, activation):

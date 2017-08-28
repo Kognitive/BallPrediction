@@ -73,6 +73,7 @@ class RecurrentHighWayNetworkCell:
         self.weights_initializer = tf.contrib.layers.variance_scaling_initializer(1.0, 'FAN_AVG', True, config['seed'])
         self.bias_initializer = tf.constant_initializer(0.0)
         self.t_gate_bias_initializer = tf.constant_initializer(-1.0)
+        self.bern = tf.contrib.distributions.Bernoulli(probs=config['zone_out_probability'])
 
         # introduce the variable scope first
         with tf.variable_scope(config['cell_name']):
@@ -138,10 +139,10 @@ class RecurrentHighWayNetworkCell:
     def __init_hidden_state(self, init):
         """Initialize the hidden state of this cell."""
 
-        return [tf.get_variable("hidden_state", [self.config['num_hidden'], 1],
+        return tf.get_variable("hidden_state", [self.config['num_hidden'], 1],
                                dtype=tf.float32,
                                trainable=self.config['learn_hidden'],
-                               initializer=init)]
+                               initializer=init)
 
     def get_hidden_state(self):
         return self.hidden_state
@@ -227,7 +228,11 @@ class RecurrentHighWayNetworkCell:
 
         with tf.variable_scope(self.config['cell_name'], reuse=True):
 
-            [it_h] = h_own
+            h = h_own
+
+            # tile if it is necessary
+            batch_size = tf.div(tf.shape(x)[1], tf.shape(h)[1])
+            it_h = tf.tile(h, [1, batch_size])
 
             # create as much cells as recurrent depth is set to
             for i in range(self.config['num_layers']):
@@ -235,5 +240,17 @@ class RecurrentHighWayNetworkCell:
                 # init the layers appropriately
                 it_h = self.__create_highway_layer(i, x, it_h, h_prev)
 
+            # True, if training, False if not
+            zl = self.zone_out_layer(it_h, h)
+
         # pass back both states
-        return [it_h]
+        return zl
+
+    def zone_out_layer(self, x, x_prev):
+        d = tf.cast(self.bern.sample([self.config['num_hidden'], 1]), tf.float32)
+        res = tf.multiply(d, x_prev) + tf.multiply(1 - d, x)
+
+        # pass back the result
+        ores = lambda: tf.identity(res)
+        zres = lambda: tf.identity(x)
+        return tf.cond(self.config['training_time'], ores, zres)

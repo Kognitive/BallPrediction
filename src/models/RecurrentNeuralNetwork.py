@@ -63,6 +63,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         with tf.variable_scope(config['unique_name']):
 
+            # create a bernoulli distribution
+            self.training_time = tf.placeholder(tf.bool, None, name="training_time")
+
             # init some variables
             self.pre_highway_network = self.get_preprocess_network()
 
@@ -82,7 +85,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # create a tensor for the input
             self.x = tf.placeholder(tf.float32, [config['num_input'], config['num_layers'], None], name="input")
-            self.y = tf.placeholder(tf.float32, [config['num_input'], None], name="target")
+            self.y = tf.placeholder(tf.float32, [config['num_input'], config['num_layers_self'], None], name="target")
 
             # define the memory state
             self.h = [cell.get_hidden_state() for cell in self.cells]
@@ -92,15 +95,26 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # Combine all 3 networks to one
             processed_unstacked_x = self.get_input_to_hidden_network(unstacked_x)
-            h = self.get_hidden_to_hidden_network(config, processed_unstacked_x)
-            self.target_y = self.get_hidden_to_output_network(h)
+            h = self.get_hidden_to_hidden_network(config, processed_unstacked_x, self.h)
+            self_x_in = self.get_hidden_to_output_network(h, False)
+
+            # iterate over the layers which use the network prediction as an input
+            self_y_out = list()
+            for self_l in range(config['num_layers_self']):
+                processed_self_x_in = self.get_input_to_hidden_network([self_x_in])
+                h = self.get_hidden_to_hidden_network(config, processed_self_x_in, h)
+                self_x_in = self.get_hidden_to_output_network(h, True)
+                self_y_out.append(self_x_in)
+
+            # define the target y
+            self.target_y = tf.stack(self_y_out, axis=1)
 
             # first of create the reduced squared error
-            red_squared_err = tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0)
+            red_squared_err = tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0), axis=0), axis=0)
 
             # So far we have got the model
-            self.error = 0.5 * tf.reduce_mean(red_squared_err, axis=0)
-            self.a_error = tf.reduce_mean(tf.sqrt(red_squared_err), axis=0)
+            self.error = 0.5 * tf.reduce_mean(red_squared_err)
+            self.a_error = tf.reduce_mean(tf.sqrt(red_squared_err))
             self.minimizer = self.create_minimizer(self.learning_rate, self.error, self.global_step)
 
         # init the global variables initializer
@@ -138,6 +152,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         cell_config['num_input'] = self.config['num_input']
         cell_config['num_hidden'] = self.config['num_hidden']
         cell_config['seed'] = self.config['seed']
+        cell_config['training_time'] = self.training_time
+        cell_config['zone_out_probability'] = self.config['zone_out_probability']
+        cell_config['dropout_prob'] = self.config['dropout_prob']
 
         # init combined cells
         cells = list()
@@ -149,20 +166,20 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         return cells
 
-    def get_hidden_to_hidden_network(self, config, processed_unstacked_x):
+    def get_hidden_to_hidden_network(self, config, processed_unstacked_x, h_prev):
 
         # use for dynamic
-        h = self.h
+        h = h_prev
 
         # unfold the cell
         for x_in in processed_unstacked_x:
 
             # create a cell
-            h[0] = self.cells[0].create_cell(x_in, h[0], [None])
+            h[0] = self.cells[0].create_cell(x_in, tf.nn.dropout(h[0], config['dropout_prob']), [None])
 
             # stack them up
             for k in range(1, config['num_stacks']):
-                h[k] = self.cells[0].create_cell(x_in, h[k], h[k - 1])
+                h[k] = self.cells[0].create_cell(x_in, h[k], tf.nn.dropout(h[k - 1], config['dropout_prob']))
 
         return h
 
@@ -179,7 +196,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """
         return [self.pre_highway_network.get_graph(x_in) for x_in in unstacked_x]
 
-    def get_hidden_to_output_network(self, h):
+    def get_hidden_to_output_network(self, h, reuse):
         """This method creates the hidden to output layer.
 
         Args:
@@ -190,7 +207,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """
 
         # Create the hidden to output layer
-        with tf.variable_scope("hidden_to_output"):
+        with tf.variable_scope("hidden_to_output", reuse=reuse):
 
             # Initialize the weights used for the output layer
             pre_target_h_weights = list()
@@ -207,11 +224,11 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             # For an easier propagation of the gradient, we want to connect the
             # outputs of all hidden units to the final output. To do so we multiply
             # the previously created matrices with each hidden vector
-            pre_target_y = pre_target_h_weights[0] @ h[0][0]
+            pre_target_y = pre_target_h_weights[0] @ tf.nn.dropout(h[0], self.config['dropout_prob'])
             for k in range(1, self.config['num_stacks']):
 
                 # sum them all up using the weight matrices
-                pre_target_y += pre_target_h_weights[k] @ h[k][0]
+                pre_target_y += pre_target_h_weights[k] @ tf.nn.dropout(h[k], self.config['dropout_prob'])
 
             # finally combine them to the target vector
             return self.config['activation_output_layer'](pre_target_y + pre_target_h_bias)
@@ -228,7 +245,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             'preprocess_coupled_gates': self.config['preprocess_coupled_gates'],
             'preprocess_activation': self.config['preprocess_activation'],
             'preprocess_h_node_activation': self.config['preprocess_h_node_activation'],
-            'seed': self.config['seed']
+            'seed': self.config['seed'],
+            'dropout_prob': self.config['dropout_prob']
         }
 
         return HighwayNetwork(highway_conf)
@@ -242,9 +260,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         else:
             self.train_writer.add_summary(summary, self.current_step)
 
-    def save(self):
+    def save(self, folder):
         """This method savs the model at the specified checkpoint."""
-        self.saver.save(self.sess, self.config['log_dir'] + "model.ckpt", self.global_step)
+        self.saver.save(self.sess, self.config['log_dir'] + folder + "/model.ckpt", self.global_step)
 
     def create_minimizer(self, learning_rate, error, global_step):
         """This method creates the correct optimizer."""
@@ -299,26 +317,30 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # we want to perform n steps
         for k in range(steps):
+            _, summary = self.sess.run([self.minimizer, self.summaries], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: True})
 
-            self.current_step += 1
-            _, summary = self.sess.run([self.minimizer, self.summaries], feed_dict={self.x: trajectories, self.y: target_trajectories})
-            self.write_summaries(summary, False)
+    def inc_current_step(self):
+        self.current_step += 1
 
-    def validate(self, trajectories, target_trajectories):
+    def validate(self, trajectories, target_trajectories, test=True):
         """This method basically validates the passed trajectories.
         It therefore splits them up so that the future frame get passed as the target.
 
         Args:
             trajectories: The trajectories to use for validation.
             target_trajectories: The target trajectories
+            test: True, if validated on test error
 
         Returns:
             The error on the passed trajectories
         """
 
-        aerror, summary = self.sess.run([self.a_error, self.summaries], feed_dict={self.x: trajectories, self.y: target_trajectories})
-        self.write_summaries(summary, True)
+        aerror, summary = self.sess.run([self.a_error, self.summaries], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: False})
+        self.write_summaries(summary, test)
         return aerror
+
+    def predict(self, trajectories):
+        return self.sess.run([self.target_y], feed_dict={self.x: trajectories, self.training_time: False})
 
     def init_params(self):
         """This initializes the parameters."""
