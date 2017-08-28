@@ -44,7 +44,7 @@ class FeedForwardDataTransformer:
         target_data = list()
 
         # get the queue size
-        queue_size = I + K - 1
+        queue_size = I + K
 
         # create a new state queue
         state_queue = SetQueue(3, queue_size)
@@ -73,8 +73,8 @@ class FeedForwardDataTransformer:
                 state_queue.insert(trajectory[i, :])
                 data = state_queue.get()
                 in_data = data[:I, :]
-                out_data = np.squeeze(data[-1:, :])
+                out_data = data[-K:, :]
                 input_data.append(np.transpose(in_data))
                 target_data.append(np.transpose(out_data))
 
-        return np.stack(input_data, axis=2), np.stack(target_data, axis=1)
+        return np.stack(input_data, axis=2), np.stack(target_data, axis=2)

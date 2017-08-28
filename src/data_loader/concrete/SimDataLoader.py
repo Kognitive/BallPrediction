@@ -58,8 +58,11 @@ class SimDataLoader(DataLoader):
         # iterate over the subdirs
         for file in subfiles:
 
+            # access the loaded trajectory
+            loaded_traj = np.loadtxt(file)[::5, 0:3]
+
             # load the positions as well as the timestamp
-            data.append(np.loadtxt(file)[::5, 0:3])
+            data.append(loaded_traj[:, :])
 
         return data
 

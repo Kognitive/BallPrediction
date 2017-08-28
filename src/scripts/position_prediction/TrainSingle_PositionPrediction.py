@@ -23,6 +23,8 @@
 # import the training controller
 import datetime
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import os
 import configparser
 
@@ -57,6 +59,13 @@ output_dir = log_dir + "/" + timestamp + "_RUNNING/"
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
+# create the model folders
+if not os.path.exists(output_dir + "mod_tr"):
+    os.makedirs(output_dir + "mod_tr")
+
+if not os.path.exists(output_dir + "mod_va"):
+    os.makedirs(output_dir + "mod_va")
+
 # retrieve the model
 config, chosen_model = Configurations.get_configuration_with_model('rhn')
 config['log_dir'] = output_dir
@@ -67,13 +76,13 @@ trajectories = loader.load_complete_data()
 path_count = len(trajectories)
 num_trajectories = path_count
 permutation = np.random.permutation(path_count)[:num_trajectories]
-num = int(np.ceil(num_trajectories / 3))
+num = int(np.ceil(num_trajectories / 5))
 slices_va = permutation[:num]
 slices_tr = permutation[num:]
 
 # transformation parameters
 I = config['num_layers']
-K = 20
+K = config['num_layers_self']
 
 # transform the data
 validation_set_in, validation_set_out = FeedForwardDataTransformer.transform([trajectories[i] for i in slices_va], I, K)
@@ -122,10 +131,31 @@ print(line)
 p_bar = Progressbar(episodes, line_length)
 
 # check if validation error gets better
-best_episode = 0
+best_val_episode = 0
 best_val_error = 1000000000
 
-lv = LivePlot()
+best_tr_episode = 0
+best_tr_error = 1000000000
+
+# create the figures appropriately
+fig_error = plt.figure(0)
+fig_pred = plt.figure(1)
+
+# create the array of subplots
+num_traj = 3
+ax_arr = [None] * (num_traj * 2)
+
+# create all subplots
+for k in range(num_traj * 2):
+    num = 2 * 100 + num_traj * 10 + (k + 1)
+    ax_arr[k] = fig_pred.add_subplot(num, projection='3d')
+
+# set interactive mode on
+plt.ion()
+
+# sample some trajectories to display
+val_display_slices = np.random.permutation(config['va_size'])[:num_traj]
+tr_display_slices = np.random.permutation(config['tr_size'])[:num_traj]
 
 # set the range
 for episode in range(episodes):
@@ -137,22 +167,67 @@ for episode in range(episodes):
         slices = np.random.randint(0, config['tr_size'], config['batch_size'])
 
         # train the model
-        model.train(training_set_in[:, :, slices], training_set_out[:, slices], config['steps_per_batch'])
+        model.train(training_set_in[:, :, slices], training_set_out[:, :, slices], config['steps_per_batch'])
+
+    model.inc_current_step()
 
     # calculate validation error
-    validation_error[episode] = model.validate(validation_set_in, validation_set_out)
-    if show_train_error: train_error[episode] = model.validate(training_set_in, training_set_out)
+    validation_error[episode] = model.validate(validation_set_in, validation_set_out, True)
+    train_error[episode] = model.validate(training_set_in, training_set_out, False)
 
     # check if we have to update our best error
     if best_val_error > validation_error[episode]:
-        best_episode = episode
+        best_val_episode = episode
         best_val_error = validation_error[episode]
+        model.save("mod_va")
 
-    # update live plot
-    lv.update_plot(episode, validation_error, train_error if show_train_error else None)
+        # check if we have to update our best error
+    if best_tr_error > train_error[episode]:
+        best_tr_episode = episode
+        best_tr_error = train_error[episode]
+        model.save("mod_tr")
+
+    # draw the training error and validation error
+    plt.figure(0)
+    plt.clf()
+    fig_error.suptitle("Error is: " + str(validation_error[episode]))
+    plt.plot(np.linspace(0, episode, episode + 1), validation_error[0:episode + 1], color='r', label='Validation Error')
+    plt.plot(np.linspace(0, episode, episode + 1), train_error[0:episode + 1], color='b', label='Training Error')
+    plt.legend()
+
+    # display 4 predictions (2 x validation, 2 x training)
+    trajectories_in = np.concatenate((validation_set_in[:, :, val_display_slices], training_set_in[:, :, tr_display_slices]), 2)
+    trajectories_out = np.concatenate((validation_set_out[:, :, val_display_slices], training_set_out[:, :, tr_display_slices]), 2)
+    prediction_out = np.asarray(model.predict(trajectories_in))[0]
+
+    # print the trajectories
+    for i in range(num_traj * 2):
+
+        ax_arr[i].cla()
+
+        # print the real trajectory
+        x = trajectories_out[0, :, i]
+        y = trajectories_out[1, :, i]
+        z = trajectories_out[2, :, i]
+        ax_arr[i].plot(x, y, z, label='Real')
+
+        # print the predicted trajectory
+        x = prediction_out[0, :, i]
+        y = prediction_out[1, :, i]
+        z = prediction_out[2, :, i]
+        ax_arr[i].plot(x, y, z, label='Prediction')
+
+        # print the predicted trajectory
+        x = trajectories_in[0, :, i]
+        y = trajectories_in[1, :, i]
+        z = trajectories_in[2, :, i]
+        ax_arr[i].plot(x, y, z, label='Input')
+        ax_arr[i].legend()
+
+    plt.pause(0.01)
 
     # update progressbar
     p_bar.progress()
 
+plt.ioff()
 os.rename(output_dir, old_output_dir + str(validation_error[episodes - 1]))
-lv.close()
