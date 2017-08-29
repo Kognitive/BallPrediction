@@ -25,7 +25,7 @@ class Configurations:
 
         # training details
         config['episodes'] = 10000
-        config['steps_per_episode'] = 10
+        config['steps_per_episode'] = 100
         config['steps_per_batch'] = 1
         config['batch_size'] = 256
 
@@ -49,8 +49,8 @@ class Configurations:
         config['clip_norm'] = 10
 
         # regularization parameters
-        config['dropout_prob'] = 0.5
-        config['zone_out_probability'] = 0.5
+        config['dropout_prob'] = 1.0
+        config['zone_out_probability'] = 0.0
 
         # the settings for the recursive part
         config['rec_num_hidden'] = 16

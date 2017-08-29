@@ -120,15 +120,16 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
                 lst_output.append(self.get_hidden_to_output_network(h)[0])
 
             # define the target y
-            self.target_y = tf.stack(lst_output, axis=1, name="target_y")
+            self.target_y = tf.stack(lst_output, axis=1, name="tar get_y")
 
             # first of create the reduced squared error
-            squared_err = tf.pow(self.target_y - self.y, 2)
+            err = self.target_y - self.y
+            squared_err = tf.pow(err, 2)
 
             # So far we have got the model
             self.error = 0.5 * tf.reduce_mean(squared_err)
             self.a_error = tf.reduce_mean(tf.sqrt(tf.reduce_sum(squared_err, axis=0)), name="a_error")
-            self.single_error = tf.reduce_mean(tf.reduce_mean(squared_err, axis=1), axis=1, name="single_error")
+            self.single_error = tf.reduce_mean(tf.reduce_mean(tf.abs(err), axis=1), axis=1, name="single_error")
 
             # increment global episode
             self.inc_global_episode = tf.assign(self.global_episode,
