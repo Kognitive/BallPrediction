@@ -115,12 +115,13 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # apply some student forcing
             for self_l in range(config['rec_num_layers_student_forcing']):
+                unstacked_x.append(tf.squeeze(lst_output[-1:], axis=0))
                 processed_self_x_in = self.get_input_to_hidden_network(lst_output[-1:])
                 h = self.get_hidden_to_hidden_network(config, processed_self_x_in, cutted_lst_h[-1])
                 lst_output.append(self.get_hidden_to_output_network(h)[0])
 
             # define the target y
-            self.target_y = tf.stack(lst_output, axis=1, name="tar get_y")
+            self.target_y = tf.stack(lst_output, axis=1, name="target_y")
 
             # first of create the reduced squared error
             err = self.target_y - self.y
@@ -251,7 +252,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             The output layer itself.
         """
 
-        # Create the hidden to output layer
         return [self.post_highway_network.get_graph(tf.concat(h, axis=0)) for h in lst_h]
 
     def get_preprocess_network(self):
@@ -311,7 +311,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         all_values = self.sess.run(all_vars)
 
         for k in range(len(all_values)):
-            np.save('{}{}/{}.npy'.format(self.config['log_dir'], folder, k), all_values[k])
+            mod_name = str.replace(str.replace(all_vars[k].name, '/', '-'), '_', '-')
+            np.save('{}{}/{}.npy'.format(self.config['log_dir'], folder, mod_name), all_values[k])
 
     def restore(self, folder):
         """This method restores the model from the specified folder."""
@@ -319,7 +320,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         assign_list = list()
         for k in range(len(all_vars)):
-            tensor = np.load('{}{}/{}.npy'.format(self.config['log_dir'], folder, k))
+            mod_name = str.replace(str.replace(all_vars[k].name, '/', '-'), '_', '-')
+            tensor = np.load('{}{}/{}.npy'.format(self.config['log_dir'], folder, mod_name))
             assign_list.append(tf.assign(all_vars[k], tensor))
 
         self.sess.run(tf.group(*assign_list))
