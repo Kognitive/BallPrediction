@@ -105,8 +105,8 @@ model.init_params()
 print(line)
 
 # transformation parameters
-I = conf['num_layers']
-K = conf['num_overlapping']
+I = conf['rec_num_layers']
+K = conf['rec_num_layers_teacher_forcing']
 
 # load trajectories, split them up and transform them
 trajectories = loader.load_complete_data()

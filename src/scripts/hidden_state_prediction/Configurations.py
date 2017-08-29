@@ -22,83 +22,64 @@ class Configurations:
         """
 
         config = {}
+
+        # training details
         config['episodes'] = 10000
-        config['steps_per_episode'] = 100
+        config['steps_per_episode'] = 10
         config['steps_per_batch'] = 1
         config['batch_size'] = 256
+
+        # model
+        model = RecurrentHighWayNetwork
+
+        # basic properties of a model
+        config['unique_name'] = "RecurrentHighWayNetwork"
+        config['seed'] = 3
+
+        # data details
         config['num_input'] = 3
         config['num_output'] = 4
 
-        if model_name == 'lstm':
+        # minimizer settings (Adam doesn't use the parameters)
+        config['minimizer'] = 'adam'
+        config['momentum'] = 0.95
+        config['lr_rate'] = 0.01
+        config['lr_decay_steps'] = 100
+        config['lr_decay_rate'] = 0.85
+        config['clip_norm'] = 10
 
-            # create model and configuration
-            model = LSTM
-            config['unique_name'] = "StackLSTM"
-            config['seed'] = 3
+        # regularization parameters
+        config['dropout_prob'] = 0.5
+        config['zone_out_probability'] = 0.5
 
-            config['num_hidden'] = 128
-            config['num_layers'] = 24
-            config['num_stacks'] = 5
-            config['input_node_activation'] = tf.nn.tanh
-            config['output_node_activation'] = lrelu
-            config['peephole'] = False
+        # the settings for the recursive part
+        config['rec_num_hidden'] = 16
+        config['rec_num_layers'] = 10
+        config['rec_num_layers_student_forcing'] = 0
+        config['rec_num_layers_teacher_forcing'] = 25
+        config['rec_num_stacks'] = 4
+        config['rec_depth'] = 6
+        config['rec_h_node_activation'] = 'tanh'
+        config['rec_learnable_hidden_states'] = True
+        config['rec_coupled_gates'] = True
+        config['rec_layer_normalization'] = True
 
-            config['minimizer'] = 'adam'
-            config['momentum'] = 0.95
-            config['lr_rate'] = 0.02
-            config['lr_decay_steps'] = 100
-            config['lr_decay_rate'] = 0.95
+        # the settings for the preprocess network
+        config['pre_num_hidden'] = 8
+        config['pre_num_layers'] = 3
+        config['pre_in_activation'] = 'lrelu'
+        config['pre_out_activation'] = 'lrelu'
+        config['pre_h_node_activation'] = 'tanh'
+        config['pre_coupled_gates'] = True
+        config['pre_layer_normalization'] = True
 
-            config['layer_normalization'] = False
-            config['clip_norm'] = 0
-
-            config['preprocess_h_node_activation'] = tf.nn.tanh
-            config['preprocess_activation'] = lrelu
-            config['num_intermediate'] = 64
-            config['num_preprocess_layers'] = 3
-            config['preprocess_coupled_gates'] = True
-
-        elif model_name == 'rhn':
-
-            # create model and configuration
-            model = RecurrentHighWayNetwork
-
-            config['unique_name'] = "RHN"
-            config['seed'] = 3
-
-            config['num_hidden'] = 8
-            config['num_layers'] = 10
-            config['num_layers_self'] = 0
-            config['num_overlapping'] = 25
-            config['num_stacks'] = 5
-            config['recurrence_depth'] = 5
-            config['h_node_activation'] = 'tanh'
-
-            config['num_mdn_gaussian'] = 21
-
-            config['minimizer'] = 'adam'
-            config['momentum'] = 0.95
-            config['lr_rate'] = 0.01
-            config['lr_decay_steps'] = 100
-            config['lr_decay_rate'] = 0.85
-
-            config['learnable_hidden_states'] = True
-            config['coupled_gates'] = True
-            config['layer_normalization'] = True
-            config['clip_norm'] = 10
-            config['zone_out_probability'] = 0.0
-            config['dropout_prob'] = 1.0
-
-            # settings regarding the hidden-to-output network
-            config['activation_output_layer'] = 'identity'
-
-            config['preprocess_h_node_activation'] = 'tanh'
-            config['preprocess_activation'] = 'lrelu'
-            config['num_intermediate'] = 8
-            config['num_preprocess_layers'] = 4
-            config['preprocess_coupled_gates'] = True
-
-        else:
-            exit(1)
+        # the settings for the postprocess network
+        config['post_num_hidden'] = 8
+        config['post_num_layers'] = 3
+        config['post_in_activation'] = 'lrelu'
+        config['post_out_activation'] = 'identity'
+        config['post_h_node_activation'] = 'tanh'
+        config['post_coupled_gates'] = True
+        config['post_layer_normalization'] = True
 
         return config, model

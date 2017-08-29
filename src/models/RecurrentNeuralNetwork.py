@@ -52,72 +52,75 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
                 lr_decay_rate: How much should the learning rate be reduced
         """
 
-        # Perform the super call
+        # Save configuration and call the base class
         self.config = config
         super().__init__(config['unique_name'])
 
+        # create a new session for running the model
+        # the session is not visible to the callee
         self.sess = tf.Session()
 
+        # use the name of the model as a first variable scope
         with tf.variable_scope(config['unique_name']):
 
-            # save hyper parameters
-            self.weights_initializer = tf.contrib.layers.variance_scaling_initializer(1.0, 'FAN_AVG', True,
-                                                                                      config['seed'])
-            self.bias_initializer = tf.constant_initializer(0.0)
+            # ------------------------ INITIALIZATION ----------------------------
 
-            # create a bernoulli distribution
+            # create initializers and use xavier initialization for the weights
+            # and use a bias of zero
+            self.bias_initializer = tf.constant_initializer(0.0)
+            self.weights_initializer =\
+                tf.contrib.layers.variance_scaling_initializer(1.0, 'FAN_AVG', True, config['seed'])
+
+            # just a placeholder indicating whether this is training time or not
             self.training_time = tf.placeholder(tf.bool, None, name="training_time")
 
-            # init some variables
+            # create preprocess and postprocess network. Both will be
+            # modeled as a highway network
             self.pre_highway_network = self.get_preprocess_network()
+            self.post_highway_network = self.get_postprocess_network()
 
             # initialize all cells
             self.cells = self.__init_all_cells()
 
-            # --------------------------- TRAINING ----------------------------
-
-            # only one of them can be bigger than zero
-            assert config['num_layers_self'] == 0 or config['num_overlapping'] == 0
+            # ----------------------- VARIABLES & PLACEHOLDER ---------------------------
 
             self.global_step = tf.Variable(0, trainable=False, name='global_step')
             self.global_episode = tf.Variable(0, trainable=False, name='global_episode')
 
-            # create a tensor for the input
-            self.x = tf.placeholder(tf.float32, [config['num_input'], config['num_layers'] + config['num_overlapping'], None], name="input")
-            self.y = tf.placeholder(tf.float32, [config['num_output'], config['num_layers_self'] + config['num_overlapping'] + 1, None], name="target")
+            # X and Y Tensor
+            self.x = tf.placeholder(tf.float32, [config['num_input'],
+                                                 config['rec_num_layers'] + config['rec_num_layers_teacher_forcing'],
+                                                 None], name="input")
+
+            self.y = tf.placeholder(tf.float32, [config['num_output'],
+                                                 config['rec_num_layers_student_forcing'] + config['rec_num_layers_teacher_forcing'] + 1,
+                                                 None], name="target")
+
+            # --------------------------------- GRAPH ------------------------------------
 
             # define the memory state
-            self.h = [cell.get_hidden_state() for cell in self.cells]
+            self.h = [tf.tile(cell.get_hidden_state(), [1, tf.shape(self.x)[2]]) for cell in self.cells]
 
-            # Unstack the input itself
+            # unstack the input to a list, so it can be easier processed
             unstacked_x = tf.unstack(self.x, axis=1)
 
-            # Combine all 3 networks to one
+            # create all 3 components of the network, from preprocess, recurrent and
+            # postprocess parts of the network.
             processed_unstacked_x = self.get_input_to_hidden_network(unstacked_x)
-            lst_h = self.get_hidden_to_hidden_network(config, processed_unstacked_x, self.h)[-(config['num_overlapping'] + 1):]
+            lst_h = self.get_hidden_to_hidden_network(config, processed_unstacked_x, self.h)
+            cutted_lst_h = lst_h[-(config['rec_num_layers_teacher_forcing'] + 1):]
 
-            # iterate over the layers which use the network prediction as an input
-            self_y_out = list()
+            # create the outputs for each element in the list
+            lst_output = self.get_hidden_to_output_network(cutted_lst_h)
 
-            # create first
-            self_x_in = self.get_hidden_to_output_network(lst_h[0], False)
-            self_y_out.append(self_x_in)
-
-            # append the self x in
-            for c_h in range(1, len(lst_h)):
-
-                # create first
-                self_x_in = self.get_hidden_to_output_network(lst_h[c_h], True)
-                self_y_out.append(self_x_in)
-
-            for self_l in range(config['num_layers_self']):
-                processed_self_x_in = self.get_input_to_hidden_network([self_x_in])
-                h = self.get_hidden_to_hidden_network(config, processed_self_x_in, lst_h[0])
-                self_x_in = self.get_hidden_to_output_network(h[0], True)
-                self_y_out.append(self_x_in)
+            # apply some student forcing
+            for self_l in range(config['rec_num_layers_student_forcing']):
+                processed_self_x_in = self.get_input_to_hidden_network(lst_output[-1:])
+                h = self.get_hidden_to_hidden_network(config, processed_self_x_in, cutted_lst_h[-1])
+                lst_output.append(self.get_hidden_to_output_network(h)[0])
 
             # define the target y
-            self.target_y = tf.stack(self_y_out, axis=1, name="target_y")
+            self.target_y = tf.stack(lst_output, axis=1, name="target_y")
 
             # first of create the reduced squared error
             squared_err = tf.pow(self.target_y - self.y, 2)
@@ -128,7 +131,8 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             self.single_error = tf.reduce_mean(tf.reduce_mean(squared_err, axis=1), axis=1, name="single_error")
 
             # increment global episode
-            self.inc_global_episode = tf.assign(self.global_episode, self.global_episode + 1,
+            self.inc_global_episode = tf.assign(self.global_episode,
+                                                self.global_episode + 1,
                                                 name='inc_global_episode')
 
             # create minimizer
@@ -168,12 +172,12 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # create the common
         cell_config = {}
-        cell_config['num_layers'] = self.config['recurrence_depth']
-        cell_config['coupled_gates'] = self.config['coupled_gates']
-        cell_config['learn_hidden'] = self.config['learnable_hidden_states']
-        cell_config['h_activation'] = self.config['h_node_activation']
+        cell_config['num_layers'] = self.config['rec_depth']
+        cell_config['coupled_gates'] = self.config['rec_coupled_gates']
+        cell_config['learn_hidden'] = self.config['rec_learnable_hidden_states']
+        cell_config['h_activation'] = self.config['rec_h_node_activation']
         cell_config['num_input'] = self.config['num_input']
-        cell_config['num_hidden'] = self.config['num_hidden']
+        cell_config['num_hidden'] = self.config['rec_num_hidden']
         cell_config['seed'] = self.config['seed']
         cell_config['training_time'] = self.training_time
         cell_config['zone_out_probability'] = self.config['zone_out_probability']
@@ -181,7 +185,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # init combined cells
         cells = list()
-        for k in range(self.config['num_stacks']):
+        for k in range(self.config['rec_num_stacks']):
 
             cell_config['cell_name'] = str(k)
             cell_config['head_of_stack'] = k == 0
@@ -202,21 +206,24 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
     def get_hidden_to_hidden_network(self, config, processed_unstacked_x, h_prev):
 
         # use for dynamic
-        h = h_prev
         hidden_states = list()
 
         # unfold the cell
         for x_in in processed_unstacked_x:
 
+            # create new h
+            h = config['rec_num_stacks'] * [None]
+
             # create a cell
-            h[0] = self.cells[0].create_cell(x_in, tf.nn.dropout(h[0], config['dropout_prob']), [None])
+            h[0] = self.cells[0].create_cell(x_in, tf.nn.dropout(h_prev[0], config['dropout_prob']), [None])
 
             # stack them up
-            for k in range(1, config['num_stacks']):
-                h[k] = self.cells[0].create_cell(x_in, h[k], tf.nn.dropout(h[k - 1], config['dropout_prob']))
+            for k in range(1, config['rec_num_stacks']):
+                h[k] = self.cells[0].create_cell(x_in, h_prev[k], tf.nn.dropout(h[k - 1], config['dropout_prob']))
 
             # append to list
             hidden_states.append(h)
+            h_prev = h
 
         return hidden_states
 
@@ -233,57 +240,57 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """
         return [self.pre_highway_network.get_graph(x_in) for x_in in unstacked_x]
 
-    def get_hidden_to_output_network(self, h, reuse):
+    def get_hidden_to_output_network(self, lst_h):
         """This method creates the hidden to output layer.
 
         Args:
-            h: A list of list, containing the hidden states for each layer.
+            lst_h: A list of list, containing the hidden states for each layer.
 
         Returns:
             The output layer itself.
         """
 
         # Create the hidden to output layer
-        with tf.variable_scope("hidden_to_output", reuse=reuse):
-
-            # Initialize the weights used for the output layer
-            pre_target_h_weights = list()
-            pre_target_h_bias = tf.get_variable("b", [self.config['num_output'], 1],
-                                                dtype=tf.float32,
-                                                initializer=self.bias_initializer)
-
-            for k in range(self.config['num_stacks']):
-                pre_target_h_weights.append(tf.get_variable("W" + str(k),
-                                                            [self.config['num_output'], self.config['num_hidden']],
-                                                            dtype=tf.float32,
-                                                            initializer=self.weights_initializer))
-
-            # For an easier propagation of the gradient, we want to connect the
-            # outputs of all hidden units to the final output. To do so we multiply
-            # the previously created matrices with each hidden vector
-            pre_target_y = pre_target_h_weights[0] @ tf.nn.dropout(h[0], self.config['dropout_prob'])
-            for k in range(1, self.config['num_stacks']):
-
-                # sum them all up using the weight matrices
-                pre_target_y += pre_target_h_weights[k] @ tf.nn.dropout(h[k], self.config['dropout_prob'])
-
-            # finally combine them to the target vector
-            return self.get_activation(self.config['activation_output_layer'])(pre_target_y + pre_target_h_bias)
+        return [self.post_highway_network.get_graph(tf.concat(h, axis=0)) for h in lst_h]
 
     def get_preprocess_network(self):
         """This method delivers the pre processing network."""
 
         # create the configuration for the pre processing network
         highway_conf = {
+            'name': 'preprocess_network',
             'num_input': self.config['num_input'],
-            'num_intermediate': self.config['num_intermediate'],
-            'num_output': self.config['num_hidden'],
-            'num_preprocess_layers': self.config['num_preprocess_layers'],
-            'preprocess_coupled_gates': self.config['preprocess_coupled_gates'],
-            'preprocess_activation': self.config['preprocess_activation'],
-            'preprocess_h_node_activation': self.config['preprocess_h_node_activation'],
+            'num_hidden': self.config['pre_num_hidden'],
+            'num_output': self.config['rec_num_hidden'],
+            'num_layers': self.config['pre_num_layers'],
+            'coupled_gates': self.config['pre_coupled_gates'],
+            'in_activation': self.config['pre_in_activation'],
+            'out_activation': self.config['pre_out_activation'],
+            'h_node_activation': self.config['pre_h_node_activation'],
             'seed': self.config['seed'],
-            'dropout_prob': self.config['dropout_prob']
+            'dropout_prob': self.config['dropout_prob'],
+            'layer_normalization': self.config['pre_layer_normalization']
+        }
+
+        return HighwayNetwork(highway_conf)
+
+    def get_postprocess_network(self):
+        """This method delivers the pre processing network."""
+
+        # create the configuration for the pre processing network
+        highway_conf = {
+            'name': 'postprocess_network',
+            'num_input': self.config['rec_num_stacks'] * self.config['rec_num_hidden'],
+            'num_hidden': self.config['post_num_hidden'],
+            'num_output': self.config['num_output'],
+            'num_layers': self.config['post_num_layers'],
+            'coupled_gates': self.config['post_coupled_gates'],
+            'in_activation': self.config['post_in_activation'],
+            'out_activation': self.config['post_out_activation'],
+            'h_node_activation': self.config['post_h_node_activation'],
+            'seed': self.config['seed'],
+            'dropout_prob': self.config['dropout_prob'],
+            'layer_normalization': self.config['post_layer_normalization']
         }
 
         return HighwayNetwork(highway_conf)

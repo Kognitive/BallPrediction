@@ -32,12 +32,12 @@ class HighwayNetwork:
         Args:
             config:
                 num_input: The number of the inputs
-                num_intermediate: The number of neurons for each highway layer
+                num_hidden: The number of neurons for each highway layer
                 num_output: The number of the output layer for this pre processing network.
-                num_preprocess_layers: The number of highway layers
-                preprocess_coupled_gates: True, if the gates should be coupled
-                preprocess_activation: The activation for the FC layers
-                preprocess_h_node_activation: The activation for the preprocess h node
+                num_layers: The number of highway layers
+                coupled_gates: True, if the gates should be coupled
+                activation: The activation for the FC layers
+                h_node_activation: The activation for the preprocess h node
         """
 
         # save hyper parameters
@@ -46,39 +46,43 @@ class HighwayNetwork:
 
         # save config
         self.config = config
-        with tf.variable_scope("preprocess_network", reuse=None):
+        with tf.variable_scope(self.config['name'], reuse=None):
 
             I = self.config['num_input']
-            H = self.config['num_intermediate']
+            H = self.config['num_hidden']
             O = self.config['num_output']
-
-            tf.get_variable("W_in", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
-            tf.get_variable("b_in", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
+            
+            if self.config['num_input'] != self.config['num_hidden']:
+                tf.get_variable("W_in", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
+                tf.get_variable("b_in", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
             # init the high way layers as well
-            for k in range(self.config['num_preprocess_layers']):
+            for k in range(self.config['num_layers']):
                 self.init_highway_layer(k)
 
-            if self.config['num_input'] != self.config['num_output']:
+            if self.config['num_hidden'] != self.config['num_output']:
                 tf.get_variable("W_out", [O, H], dtype=tf.float32, initializer=self.weights_initializer)
                 tf.get_variable("b_out", [O, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
     def get_graph(self, x):
         """Simply get the graph of this highway network."""
 
-        with tf.variable_scope("preprocess_network", reuse=True):
-            tree = self.get_activation(self.config['preprocess_activation'])(tf.get_variable("W_in") @ x + tf.get_variable("b_in"))
+        with tf.variable_scope(self.config['name'], reuse=True):
+
+            tree = x
+
+            if self.config['num_input'] != self.config['num_hidden']:
+                tree = self.get_activation(self.config['in_activation'])(tf.get_variable("W_in") @ tree + tf.get_variable("b_in"))
 
             # init the high way layers as well
-            for k in range(self.config['num_preprocess_layers']):
+            for k in range(self.config['num_layers']):
                 tree = self.create_highway_layer(k, tree)
 
             # when modulation is needed
-            if self.config['num_input'] != self.config['num_output']:
-                return self.get_activation(self.config['preprocess_activation'])(tf.get_variable("W_out") @ tree + tf.get_variable("b_out"))
-            else: 
-                return tree
-            
+            if self.config['num_hidden'] != self.config['num_output']:
+                tree = self.get_activation(self.config['out_activation'])(tf.get_variable("W_out") @ tree + tf.get_variable("b_out"))
+
+            return tree
 
     def init_highway_layer(self, layer):
         """This method initializes the weights for a layer with the
@@ -89,7 +93,7 @@ class HighwayNetwork:
         """
 
         with tf.variable_scope(str(layer), reuse=None):
-            if not self.config['preprocess_coupled_gates']:
+            if not self.config['coupled_gates']:
                 self.init_single_layer("C")
 
             self.init_single_layer("H")
@@ -104,11 +108,15 @@ class HighwayNetwork:
         with tf.variable_scope(name, reuse=None):
 
             # extract parameters
-            H = self.config['num_intermediate']
+            H = self.config['num_hidden']
 
             tf.get_variable("W", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
             bias_initializer = tf.constant_initializer(-1.0) if name == "T" else self.bias_initializer
             tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=bias_initializer)
+            
+            # check whether we have to add layer normalization
+            if self.config['layer_normalization']:
+                tf.get_variable("g", [H, 1], dtype=tf.float32, initializer=self.weights_initializer)
 
     def create_highway_layer(self, layer, x):
         """This method creates one layer, it therefore needs a activation
@@ -123,10 +131,11 @@ class HighwayNetwork:
         """
 
         with tf.variable_scope(str(layer), reuse=True):
+            
             # The input to the layer unit
-            H = self.create_single_layer("H", x, self.get_activation(self.config['preprocess_h_node_activation']))
+            H = self.create_single_layer("H", x, self.get_activation(self.config['h_node_activation']))
             T = self.create_single_layer("T", x, self.get_activation('sigmoid'))
-            C = tf.constant(1.0) - T if self.config['preprocess_coupled_gates'] else self.create_single_layer("C", x, self.get_activation('sigmoid'))
+            C = tf.constant(1.0) - T if self.config['coupled_gates'] else self.create_single_layer("C", x, self.get_activation('sigmoid'))
 
             # create the variables only the first times
             return tf.nn.dropout(T * H + C * x, self.config['dropout_prob'])
@@ -141,8 +150,7 @@ class HighwayNetwork:
         elif name == 'lrelu':
             return lambda x: tf.maximum(x, 0.01 * x)
 
-    @ staticmethod
-    def create_single_layer(name, x, activation):
+    def create_single_layer(self, name, x, activation):
         """This method creates a single layer and returns
         the combined output.
 
@@ -155,7 +163,17 @@ class HighwayNetwork:
 
             # build up the network
             W = tf.get_variable("W")
-            b = tf.get_variable("b")
-            term = W @ x + b
+            term = W @ x
 
+            if self.config['layer_normalization']:
+                mean = tf.reduce_sum(term, axis=0) / self.config['num_hidden']
+                variance = tf.sqrt(tf.reduce_sum(tf.pow(term - mean, 2)) / self.config['num_hidden'])
+
+                g = tf.get_variable('g')
+                term = (g / variance) * (term - mean)
+            
+            # add constant
+            b = tf.get_variable("b")
+            term = term + b
+            
             return activation(term)

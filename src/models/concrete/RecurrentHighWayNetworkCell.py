@@ -240,21 +240,17 @@ class RecurrentHighWayNetworkCell:
 
             h = h_own
 
-            # tile if it is necessary
-            batch_size = tf.div(tf.shape(x)[1], tf.shape(h)[1])
-            it_h = tf.tile(h, [1, batch_size])
-
             # create as much cells as recurrent depth is set to
             for i in range(self.config['num_layers']):
 
                 # init the layers appropriately
-                it_h = self.__create_highway_layer(i, x, it_h, h_prev)
+                h = self.__create_highway_layer(i, x, h, h_prev)
 
             # True, if training, False if not
-            zl = self.zone_out_layer(it_h, h)
+            zl = self.zone_out_layer(h, h_own)
 
         # pass back both states
-        return zl
+        return h
 
     def zone_out_layer(self, x, x_prev):
         d = tf.cast(self.bern.sample([self.config['num_hidden'], 1]), tf.float32)
