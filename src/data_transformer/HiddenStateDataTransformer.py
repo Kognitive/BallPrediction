@@ -25,7 +25,7 @@ import numpy as np
 from src.utils.SetQueue import SetQueue
 
 
-class FeedForwardDataTransformer:
+class HiddenStateDataTransformer:
     """This class can be used to transform data."""
 
     @staticmethod
@@ -44,7 +44,7 @@ class FeedForwardDataTransformer:
         target_data = list()
 
         # get the queue size
-        queue_size = I + K + 1
+        queue_size = I + K
 
         # create a new state queue
         state_queue = SetQueue(3, queue_size)
@@ -61,7 +61,7 @@ class FeedForwardDataTransformer:
 
             # fill complete queue with entries
             for i in range(queue_size - 1):
-                state_queue.insert(trajectory[i, :])
+                state_queue.insert(trajectory[i, 0:6:2])
 
             # gather the overall number of points
             num_points = np.size(trajectory, 0)
@@ -70,10 +70,10 @@ class FeedForwardDataTransformer:
             for i in range(queue_size - 1, num_points):
 
                 # insert into queue
-                state_queue.insert(trajectory[i, :])
+                state_queue.insert(trajectory[i, 0:6:2])
                 data = state_queue.get()
-                in_data = data[:I, :]
-                out_data = data[-(K+1):, :]
+                in_data = data
+                out_data = trajectory[(i-K):(i+1), 1:8:2]
                 input_data.append(np.transpose(in_data))
                 target_data.append(np.transpose(out_data))
 

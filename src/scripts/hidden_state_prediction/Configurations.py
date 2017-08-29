@@ -22,12 +22,12 @@ class Configurations:
         """
 
         config = {}
-        config['episodes'] = 40000
+        config['episodes'] = 10000
         config['steps_per_episode'] = 100
         config['steps_per_batch'] = 1
         config['batch_size'] = 256
         config['num_input'] = 3
-        config['num_output'] = 3
+        config['num_output'] = 4
 
         if model_name == 'lstm':
 
@@ -66,11 +66,11 @@ class Configurations:
             config['unique_name'] = "RHN"
             config['seed'] = 3
 
-            config['num_hidden'] = 16
+            config['num_hidden'] = 8
             config['num_layers'] = 10
-            config['num_layers_self'] = 25
-            config['num_overlapping'] = 0
-            config['num_stacks'] = 6
+            config['num_layers_self'] = 0
+            config['num_overlapping'] = 25
+            config['num_stacks'] = 5
             config['recurrence_depth'] = 5
             config['h_node_activation'] = 'tanh'
 
@@ -94,8 +94,8 @@ class Configurations:
 
             config['preprocess_h_node_activation'] = 'tanh'
             config['preprocess_activation'] = 'lrelu'
-            config['num_intermediate'] = 16
-            config['num_preprocess_layers'] = 3
+            config['num_intermediate'] = 8
+            config['num_preprocess_layers'] = 4
             config['preprocess_coupled_gates'] = True
 
         else:

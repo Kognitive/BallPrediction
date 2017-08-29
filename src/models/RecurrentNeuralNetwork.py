@@ -76,12 +76,15 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # --------------------------- TRAINING ----------------------------
 
+            # only one of them can be bigger than zero
+            assert config['num_layers_self'] == 0 or config['num_overlapping'] == 0
+
             self.global_step = tf.Variable(0, trainable=False, name='global_step')
             self.global_episode = tf.Variable(0, trainable=False, name='global_episode')
 
             # create a tensor for the input
-            self.x = tf.placeholder(tf.float32, [config['num_input'], config['num_layers'], None], name="input")
-            self.y = tf.placeholder(tf.float32, [config['num_input'], config['num_layers_self'], None], name="target")
+            self.x = tf.placeholder(tf.float32, [config['num_input'], config['num_layers'] + config['num_overlapping'], None], name="input")
+            self.y = tf.placeholder(tf.float32, [config['num_output'], config['num_layers_self'] + config['num_overlapping'] + 1, None], name="target")
 
             # define the memory state
             self.h = [cell.get_hidden_state() for cell in self.cells]
@@ -91,26 +94,38 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # Combine all 3 networks to one
             processed_unstacked_x = self.get_input_to_hidden_network(unstacked_x)
-            h = self.get_hidden_to_hidden_network(config, processed_unstacked_x, self.h)
-            self_x_in = self.get_hidden_to_output_network(h, False)
+            lst_h = self.get_hidden_to_hidden_network(config, processed_unstacked_x, self.h)[-(config['num_overlapping'] + 1):]
 
             # iterate over the layers which use the network prediction as an input
             self_y_out = list()
+
+            # create first
+            self_x_in = self.get_hidden_to_output_network(lst_h[0], False)
+            self_y_out.append(self_x_in)
+
+            # append the self x in
+            for c_h in range(1, len(lst_h)):
+
+                # create first
+                self_x_in = self.get_hidden_to_output_network(lst_h[c_h], True)
+                self_y_out.append(self_x_in)
+
             for self_l in range(config['num_layers_self']):
                 processed_self_x_in = self.get_input_to_hidden_network([self_x_in])
-                h = self.get_hidden_to_hidden_network(config, processed_self_x_in, h)
-                self_x_in = self.get_hidden_to_output_network(h, True)
+                h = self.get_hidden_to_hidden_network(config, processed_self_x_in, lst_h[0])
+                self_x_in = self.get_hidden_to_output_network(h[0], True)
                 self_y_out.append(self_x_in)
 
             # define the target y
             self.target_y = tf.stack(self_y_out, axis=1, name="target_y")
 
             # first of create the reduced squared error
-            red_squared_err = tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(tf.pow(self.target_y - self.y, 2), axis=0), axis=0), axis=0)
+            squared_err = tf.pow(self.target_y - self.y, 2)
 
             # So far we have got the model
-            self.error = 0.5 * tf.reduce_mean(red_squared_err)
-            self.a_error = tf.reduce_mean(tf.sqrt(red_squared_err), name="a_error")
+            self.error = 0.5 * tf.reduce_mean(squared_err)
+            self.a_error = tf.reduce_mean(tf.sqrt(tf.reduce_sum(squared_err, axis=0)), name="a_error")
+            self.single_error = tf.reduce_mean(tf.reduce_mean(squared_err, axis=1), axis=1, name="single_error")
 
             # increment global episode
             self.inc_global_episode = tf.assign(self.global_episode, self.global_episode + 1,
@@ -188,6 +203,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # use for dynamic
         h = h_prev
+        hidden_states = list()
 
         # unfold the cell
         for x_in in processed_unstacked_x:
@@ -199,7 +215,10 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             for k in range(1, config['num_stacks']):
                 h[k] = self.cells[0].create_cell(x_in, h[k], tf.nn.dropout(h[k - 1], config['dropout_prob']))
 
-        return h
+            # append to list
+            hidden_states.append(h)
+
+        return hidden_states
 
     def get_input_to_hidden_network(self, unstacked_x):
         """This method should take a list of input variables and
@@ -371,9 +390,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             The error on the passed trajectories
         """
 
-        aerror, summary, episode = self.sess.run([self.a_error, self.summaries, self.global_episode], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: False})
+        aerror, serror, summary, episode = self.sess.run([self.a_error, self.single_error, self.summaries, self.global_episode], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: False})
         self.write_summaries(summary, test, episode)
-        return aerror
+        return aerror, serror
 
     def predict(self, trajectories):
         return self.sess.run([self.target_y], feed_dict={self.x: trajectories, self.training_time: False})

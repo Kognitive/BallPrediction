@@ -59,8 +59,9 @@ class HighwayNetwork:
             for k in range(self.config['num_preprocess_layers']):
                 self.init_highway_layer(k)
 
-            tf.get_variable("W_out", [O, H], dtype=tf.float32, initializer=self.weights_initializer)
-            tf.get_variable("b_out", [O, 1], dtype=tf.float32, initializer=self.bias_initializer)
+            if self.config['num_input'] != self.config['num_output']:
+                tf.get_variable("W_out", [O, H], dtype=tf.float32, initializer=self.weights_initializer)
+                tf.get_variable("b_out", [O, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
     def get_graph(self, x):
         """Simply get the graph of this highway network."""
@@ -72,7 +73,12 @@ class HighwayNetwork:
             for k in range(self.config['num_preprocess_layers']):
                 tree = self.create_highway_layer(k, tree)
 
-            return self.get_activation(self.config['preprocess_activation'])(tf.get_variable("W_out") @ tree + tf.get_variable("b_out"))
+            # when modulation is needed
+            if self.config['num_input'] != self.config['num_output']:
+                return self.get_activation(self.config['preprocess_activation'])(tf.get_variable("W_out") @ tree + tf.get_variable("b_out"))
+            else: 
+                return tree
+            
 
     def init_highway_layer(self, layer):
         """This method initializes the weights for a layer with the
