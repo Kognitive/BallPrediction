@@ -39,6 +39,7 @@ class Configurations:
         # data details
         config['num_input'] = 3
         config['num_output'] = 4
+        config['distance_model'] = False
 
         # minimizer settings (Adam doesn't use the parameters)
         config['minimizer'] = 'adam'
@@ -53,7 +54,7 @@ class Configurations:
         config['zone_out_probability'] = 0.0
 
         # the settings for the recursive part
-        config['rec_num_hidden'] = 16
+        config['rec_num_hidden'] = 32
         config['rec_num_layers'] = 10
         config['rec_num_layers_student_forcing'] = 0
         config['rec_num_layers_teacher_forcing'] = 25

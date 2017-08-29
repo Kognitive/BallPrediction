@@ -39,7 +39,7 @@ from src.utils.Progressbar import Progressbar
 from src.models.RecurrentNeuralNetwork import RecurrentNeuralNetwork
 
 # Data Settings
-data_dir = 'sim_training_data/data_v1'
+data_dir = 'sim_training_data/data_v2'
 log_dir = 'run/hidden_state_prediction'
 
 loader = SimHiddenDataLoader(data_dir)
@@ -49,8 +49,8 @@ show_train_error = True
 line_length = 80
 
 # the reload and the last timestamp
-reload = False
-last_timestamp = "2017-08-29_14-12-50"
+reload = True
+last_timestamp = "2017-08-29_20-08-58"
 
 # ------------------------ SCRIPT -------------------------
 
