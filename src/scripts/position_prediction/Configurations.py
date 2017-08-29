@@ -27,7 +27,7 @@ class Configurations:
         config['episodes'] = 40000
         config['steps_per_episode'] = 10
         config['steps_per_batch'] = 1
-        config['batch_size'] = 256
+        config['batch_size'] = 4096
 
         # model
         model = RecurrentHighWayNetwork
@@ -35,6 +35,7 @@ class Configurations:
         # basic properties of a model
         config['unique_name'] = "RecurrentHighWayNetwork"
         config['seed'] = 3
+        config['distance_model'] = False
 
         # data details
         config['num_input'] = 3
@@ -49,8 +50,8 @@ class Configurations:
         config['clip_norm'] = 10
 
         # regularization parameters
-        config['dropout_prob'] = 0.5
-        config['zone_out_probability'] = 0.5
+        config['dropout_prob'] = 1.0
+        config['zone_out_probability'] = 0.0
 
         # the settings for the recursive part
         config['rec_num_hidden'] = 32
