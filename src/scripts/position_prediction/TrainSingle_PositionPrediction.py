@@ -39,7 +39,7 @@ from src.utils.Progressbar import Progressbar
 from src.models.RecurrentNeuralNetwork import RecurrentNeuralNetwork
 
 # Data Settings
-data_dir = 'sim_training_data/data_v1'
+data_dir = 'sim_training_data/data_v2'
 log_dir = 'run/position_prediction'
 
 loader = SimDataLoader(data_dir)
