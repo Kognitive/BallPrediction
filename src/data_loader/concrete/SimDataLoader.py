@@ -67,7 +67,7 @@ class SimDataLoader(DataLoader):
         return data
 
     # loads only the data at the specified index
-    def load_data(self, index):
+    def load_single_datum(self, index):
         if self.loaded:
             return self.data[index]
         # if not already loaded just load the file at the given index

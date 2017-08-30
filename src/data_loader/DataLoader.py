@@ -71,7 +71,7 @@ class DataLoader:
 
 
     # This is a very inefficient implementation and should be overridden if possible
-    def load_data(self, index):
+    def load_single_datum(self, index):
         return self.load_complete_data()[index]
 
 
