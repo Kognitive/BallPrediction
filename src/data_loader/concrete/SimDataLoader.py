@@ -66,6 +66,16 @@ class SimDataLoader(DataLoader):
 
         return data
 
+    # loads only the data at the specified index
+    def load_data(self, index):
+        if self.loaded:
+            return self.data[index]
+        # if not already loaded just load the file at the given index
+        subfiles = self.get_immediate_subfiles(self.root)
+        data = np.loadtxt(subfiles[index])[::5, 0:6:2]
+        data = [self.normalizer.normalize(x) for x in self.filter.filter([data])]
+        return data[0]
+
     # this method delivers all immediate subdirectories
     @staticmethod
     def get_immediate_subfiles(d):

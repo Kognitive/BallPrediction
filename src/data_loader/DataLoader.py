@@ -48,6 +48,7 @@ class DataLoader:
     def load_data(self):
         raise NotImplementedError("You have to supply a training set.")
 
+
     # This method checks, if data was already loaded, if not it loads it.from
     # Finally it returns the completely loaded data.
     def load_complete_data(self):
@@ -67,6 +68,12 @@ class DataLoader:
             print("Normalized and filtered the data.")
 
         return self.data
+
+
+    # This is a very inefficient implementation and should be overridden if possible
+    def load_data(self, index):
+        return self.load_complete_data()[index]
+
 
     # This method takes the passed data filter from the argument and
     # sets it inside in the filter attribute, so it can be used when
