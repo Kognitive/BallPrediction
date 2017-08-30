@@ -11,7 +11,7 @@ ind = 126
 
 # load the data
 loader = SimDataLoader('sim_training_data/data_v2')
-data = loader.load_data(ind)
+data = loader.load_single_datum(ind)
 
 set_in, set_out = FeedForwardDataTransformer.transform([data], 10, 25)
 
