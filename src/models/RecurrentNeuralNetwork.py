@@ -411,7 +411,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         overall_single_error = 0
 
         # iterate over the number of sets
-        for k in range(num_sets):
+        for k in range(num_sets + 1):
             batch_trajectories = trajectories[:, :, k*batch_size:(k+1)*batch_size]
             batch_target_trajectories = target_trajectories[:, :, k*batch_size:(k+1)*batch_size]
 
