@@ -111,12 +111,15 @@ class HighwayNetwork:
             H = self.config['num_hidden']
 
             tf.get_variable("W", [H, H], dtype=tf.float32, initializer=self.weights_initializer)
-            bias_initializer = tf.constant_initializer(-1.0) if name == "T" else self.bias_initializer
-            tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=bias_initializer)
             
             # check whether we have to add layer normalization
             if self.config['layer_normalization']:
-                tf.get_variable("g", [H, 1], dtype=tf.float32, initializer=self.weights_initializer)
+                tf.get_variable("beta", [H, 1], dtype=tf.float32, initializer=self.weights_initializer)
+                tf.get_variable("gamma", [H, 1], dtype=tf.float32, initializer=self.weights_initializer)
+
+            else:
+                bias_initializer = tf.constant_initializer(-1.0) if name == "T" else self.bias_initializer
+                tf.get_variable("b", [H, 1], dtype=tf.float32, initializer=bias_initializer)
 
     def create_highway_layer(self, layer, x):
         """This method creates one layer, it therefore needs a activation
@@ -165,15 +168,15 @@ class HighwayNetwork:
             W = tf.get_variable("W")
             term = W @ x
 
-            if self.config['layer_normalization']:
-                mean = tf.reduce_sum(term, axis=0) / self.config['num_hidden']
-                variance = tf.sqrt(tf.reduce_sum(tf.pow(term - mean, 2)) / self.config['num_hidden'])
+            if self.config['layer_normalization']:#
+                mean, var = tf.nn.moments(term, [0])
+                beta = tf.get_variable("beta")
+                gamma = tf.get_variable("gamma")
+                term = tf.nn.batch_normalization(term, mean, var, beta, gamma, 0.001)
 
-                g = tf.get_variable('g')
-                term = (g / variance) * (term - mean)
-            
-            # add constant
-            b = tf.get_variable("b")
-            term = term + b
+            else:
+                # add constant
+                b = tf.get_variable("b")
+                term = term + b
             
             return activation(term)
