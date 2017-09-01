@@ -51,8 +51,10 @@ class HighwayNetwork:
             I = self.config['num_input']
             H = self.config['num_hidden']
             O = self.config['num_output']
-            
-            if self.config['num_input'] != self.config['num_hidden']:
+
+            self.test_hidden = self.config['num_output'] if self.config['num_layers'] == 0 else self.config['num_hidden']
+
+            if self.config['num_input'] != self.test_hidden:
                 tf.get_variable("W_in", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
                 tf.get_variable("b_in", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
@@ -60,7 +62,7 @@ class HighwayNetwork:
             for k in range(self.config['num_layers']):
                 self.init_highway_layer(k)
 
-            if self.config['num_hidden'] != self.config['num_output']:
+            if self.test_hidden != self.config['num_output']:
                 tf.get_variable("W_out", [O, H], dtype=tf.float32, initializer=self.weights_initializer)
                 tf.get_variable("b_out", [O, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
@@ -71,7 +73,7 @@ class HighwayNetwork:
 
             tree = x
 
-            if self.config['num_input'] != self.config['num_hidden']:
+            if self.config['num_input'] != self.test_hidden:
                 tree = self.get_activation(self.config['in_activation'])(tf.get_variable("W_in") @ tree + tf.get_variable("b_in"))
 
             # init the high way layers as well
@@ -79,7 +81,7 @@ class HighwayNetwork:
                 tree = self.create_highway_layer(k, tree)
 
             # when modulation is needed
-            if self.config['num_hidden'] != self.config['num_output']:
+            if self.test_hidden != self.config['num_output']:
                 tree = self.get_activation(self.config['out_activation'])(tf.get_variable("W_out") @ tree + tf.get_variable("b_out"))
 
             return tree
@@ -153,6 +155,20 @@ class HighwayNetwork:
         elif name == 'lrelu':
             return lambda x: tf.maximum(x, 0.01 * x)
 
+    def num_params(self):
+
+        nI = self.config['num_input']
+        nO = self.config['num_output']
+        nH = self.config['num_hidden']
+        nL = self.config['num_layers']
+        cG = self.config['coupled_gates']
+
+        num = 0 if nI == self.test_hidden else ((nI + 1) * self.test_hidden)
+        num += nL * (2 if cG else 3) * (nH + 1) * nH
+        num += 0 if self.test_hidden == nO else ((nI + 1) * nO)
+
+        return num
+
     def create_single_layer(self, name, x, activation):
         """This method creates a single layer and returns
         the combined output.
@@ -168,7 +184,7 @@ class HighwayNetwork:
             W = tf.get_variable("W")
             term = W @ x
 
-            if self.config['layer_normalization']:#
+            if self.config['layer_normalization']:
                 mean, var = tf.nn.moments(term, [0])
                 beta = tf.get_variable("beta")
                 gamma = tf.get_variable("gamma")
