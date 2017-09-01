@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 import numpy as np
+import pickle
 
 from os import listdir
 from os.path import isfile, join
@@ -52,6 +53,11 @@ class SimDataLoader(DataLoader):
         # get list of all subdirs
         subfiles = self.get_immediate_subfiles(self.root)
 
+        # if we already have a pickle of the data just load it
+        if join(self.root, "data.pickle") in subfiles:
+            data = pickle.load(open(join(self.root, "data.pickle"), 'rb'))
+            return data
+
         # create empty positions array
         data = list()
 
@@ -64,6 +70,8 @@ class SimDataLoader(DataLoader):
             # load the positions as well as the timestamp
             data.append(loaded_traj[:, :])
 
+        # save the data to data.pickle to make the next load faster
+        pickle.dump(data, open(self.root + "/data.pickle", 'wb'))
         return data
 
     # loads only the data at the specified index
