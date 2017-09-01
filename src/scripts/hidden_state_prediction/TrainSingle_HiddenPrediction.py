@@ -39,7 +39,7 @@ from src.utils.Progressbar import Progressbar
 from src.models.RecurrentNeuralNetwork import RecurrentNeuralNetwork
 
 # Data Settings
-data_dir = 'sim_training_data/data_v2'
+data_dir = 'sim_training_data/data_v0'
 log_dir = 'run/hidden_state_prediction'
 
 loader = SimHiddenDataLoader(data_dir)
@@ -49,8 +49,11 @@ show_train_error = True
 line_length = 80
 
 # the reload and the last timestamp
-reload = True
-last_timestamp = "2017-08-29_20-08-58"
+reload = False
+reload_val = False
+last_timestamp = "2017-08-31_08-36-48"
+calc_velocity = True
+calc_hidden = True
 
 # ------------------------ SCRIPT -------------------------
 
@@ -87,6 +90,9 @@ if not reload:
 
     conf['log_dir'] = output_dir
     conf['time_stamp'] = timestamp
+    conf['num_output'] = (1 if calc_hidden else 0) + (3 if calc_velocity else 0)
+    conf['calc_hidden'] = calc_hidden
+    conf['calc_velocity'] = calc_velocity
 
 else:
 
@@ -95,15 +101,6 @@ else:
     # first of all restore the configuration
     config.read(output_dir + 'configuration.ini')
     conf = dict(config.items("Model"))
-
-# some debug printing
-print("Creating Model")
-
-# define the model using the parameters from top
-model = chosen_model(conf)
-model.init_params()
-
-print(line)
 
 # transformation parameters
 I = conf['rec_num_layers']
@@ -121,6 +118,16 @@ slices_tr = permutation[num:]
 # transform the data
 validation_set_in, validation_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_va], I, K)
 training_set_in, training_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_tr], I, K)
+
+assert calc_velocity or calc_hidden
+
+if calc_velocity and not calc_hidden:
+    validation_set_out = validation_set_out[0:3, :, :]
+    training_set_out = training_set_out[0:3, :, :]
+
+if calc_hidden and not calc_velocity:
+    validation_set_out = validation_set_out[3:4, :, :]
+    training_set_out = training_set_out[3:4, :, :]
 
 # define the size of training and validation set
 conf['tr_size'] = np.size(training_set_in, 2)
@@ -145,27 +152,30 @@ print(line)
 
 # define the overall error
 episodes = conf['episodes']
-validation_error = np.zeros((4, episodes))
-train_error = np.zeros((4, episodes))
+validation_error = np.zeros((conf['num_output'], episodes))
+train_error = np.zeros((conf['num_output'], episodes))
 
 # some debug printing
-print("Model: " + model.name)
+
+# define the model using the parameters from top
+model = chosen_model(conf)
+model.init_params()
+conf['model_params'] = model.num_params()
+
+# some debug printing
+print(line)
+print("Model {} ({})".format(model.name, conf['model_params']))
 print(line)
 
 # create progressbar
 p_bar = Progressbar(episodes, line_length)
 
-# create the figure appropriately
+# create both figures
 fig_error = plt.figure(0)
-ax_arr = 2 * [None]
-ax_arr[0] = fig_error.add_subplot(121)
-ax_arr[1] = fig_error.add_subplot(122)
-
-# show a prediction
 fig_pred = plt.figure(1)
 
 # create the array of subplots
-num_traj = 3
+num_traj = 4
 pred_ax_arr = [None] * (num_traj * 2)
 
 # create all subplots
@@ -173,12 +183,18 @@ for k in range(num_traj * 2):
     num = 2 * 100 + num_traj * 10 + (k + 1)
     pred_ax_arr[k] = fig_pred.add_subplot(num, projection='3d')
 
-# set interactive mode on
-plt.ion()
-
 # sample some trajectories to display
 val_display_slices = np.random.permutation(conf['va_size'])[:num_traj]
 tr_display_slices = np.random.permutation(conf['tr_size'])[:num_traj]
+plt.ion()
+
+if calc_velocity and calc_hidden:
+
+    ax_arr = 2 * [None]
+
+    # noinspection PyUnboundLocalVariable
+    ax_arr[0] = fig_error.add_subplot(121)
+    ax_arr[1] = fig_error.add_subplot(122)
 
 if reload: model.restore('general')
 s_episode = model.get_episode()
@@ -195,11 +211,17 @@ if reload:
     train_error = np.load(conf['log_dir'] + 'general/tr_error.npy')
 
     # check if validation error gets better
-    best_val_episode = np.argmin(np.sum(validation_error, axis=0)[0:s_episode])
-    best_val_error = np.min(np.sum(validation_error[0:s_episode], axis=0))
+    mean_val = np.mean(validation_error, axis=0)[:, 0:s_episode]
+    best_val_episode = np.argmin(mean_val)
+    best_val_error = np.min(mean_val)
 
-    best_tr_episode = np.argmin(np.sum(train_error[0:s_episode], axis=0))
-    best_tr_error = np.min(np.sum(train_error[0:s_episode], axis=0))
+    # training error as well
+    mean_tra = np.mean(train_error, axis=0)[:, 0:s_episode]
+    best_tr_episode = np.argmin(mean_tra)
+    best_tr_error = np.min(mean_tra)
+
+    if reload_val:
+        s_episode = best_val_episode + 1
 
 # set the range
 for episode in range(s_episode, episodes):
@@ -226,8 +248,8 @@ for episode in range(s_episode, episodes):
     np.save(conf['log_dir'] + 'general/tr_error.npy', train_error)
 
     # get the combined error
-    combined_val_error = np.sum(validation_error[:, episode])
-    combined_tr_error = np.sum(train_error[:, episode])
+    combined_val_error = np.mean(validation_error[:, episode])
+    combined_tr_error = np.mean(train_error[:, episode])
 
     # check if we have to update our best error
     if best_val_error > combined_val_error:
@@ -245,16 +267,28 @@ for episode in range(s_episode, episodes):
     plt.figure(0)
     fig_error.suptitle("Error is: " + str(combined_val_error))
 
-    # plot the failure
-    ax_arr[0].cla()
-    ax_arr[0].plot(np.linspace(0, episode, episode + 1), validation_error[3, 0:episode + 1], color='r', label='Validation Error')
-    ax_arr[0].plot(np.linspace(0, episode, episode + 1), train_error[3, 0:episode + 1], color='b', label='Training Error')
-    ax_arr[0].legend()
+    calc_both = calc_hidden and calc_velocity
+    if not calc_both:
+        plt.clf()
 
-    ax_arr[1].cla()
-    ax_arr[1].plot(np.linspace(0, episode, episode + 1), np.sqrt(np.sum(np.power(validation_error[0:3, 0:episode + 1], 2), axis=0)), color='r', label='Validation Error')
-    ax_arr[1].plot(np.linspace(0, episode, episode + 1), np.sqrt(np.sum(np.power(train_error[0:3, 0:episode + 1], 2), axis=0)), color='b', label='Training Error')
-    ax_arr[1].legend()
+    hid_array = ax_arr[0] if calc_both else plt
+    if calc_hidden:
+
+        # get index of hidden state
+        ind = 3 if calc_both else 0
+
+        # plot the failure
+        hid_array.cla()
+        hid_array.plot(np.linspace(0, episode, episode + 1), validation_error[ind, 0:episode + 1], color='r', label='Validation Error')
+        hid_array.plot(np.linspace(0, episode, episode + 1), train_error[ind, 0:episode + 1], color='b', label='Training Error')
+        hid_array.legend()
+
+    vel_array = ax_arr[1] if calc_both else plt
+    if calc_velocity:
+        vel_array.cla()
+        vel_array.plot(np.linspace(0, episode, episode + 1), np.sqrt(np.sum(np.power(validation_error[0:3, 0:episode + 1], 2), axis=0)), color='r', label='Validation Error')
+        vel_array.plot(np.linspace(0, episode, episode + 1), np.sqrt(np.sum(np.power(train_error[0:3, 0:episode + 1], 2), axis=0)), color='b', label='Training Error')
+        vel_array.legend()
 
     # display 4 predictions (2 x validation, 2 x training)
     trajectories_in = np.concatenate((validation_set_in[:, :, val_display_slices], training_set_in[:, :, tr_display_slices]), 2)
@@ -265,11 +299,11 @@ for episode in range(s_episode, episodes):
     for i in range(num_traj * 2):
         pred_ax_arr[i].cla()
 
-        # print the real trajectory
-        z = prediction_out[3, 0, i]
-        rz = result_out[3, 0, i]
-        pred_ax_arr[i].scatter(0, 0, z, label='Pred_Hidden')
-        pred_ax_arr[i].scatter(0, 0, rz, label='Real_Hidden')
+        # print the input trajectory
+        x = trajectories_in[0, :conf['rec_num_layers'], i]
+        y = trajectories_in[1, :conf['rec_num_layers'], i]
+        z = trajectories_in[2, :conf['rec_num_layers'], i]
+        pred_ax_arr[i].plot(x, y, z, label='Input', color='b')
 
         # print the predicted trajectory
         start_x = trajectories_in[0, -(conf['rec_num_layers_teacher_forcing'] + 1), i]
@@ -281,23 +315,31 @@ for episode in range(s_episode, episodes):
         comb_x = start_x + dx
         comb_y = start_y + dy
         comb_z = start_z + dz
-        pred_ax_arr[i].plot([start_x, comb_x], [start_y, comb_y], [start_z, comb_z], label='Pred_Velocity')
+        pred_ax_arr[i].plot([start_x, comb_x], [start_y, comb_y], [start_z, comb_z], label='Pred Velocity',
+                            color='#1455bc')
 
-        # print the predicted trajectory
-        rdx = result_out[0, 0, i]
-        rdy = result_out[1, 0, i]
-        rdz = result_out[2, 0, i]
-        rcomb_x = start_x + rdx
-        rcomb_y = start_y + rdy
-        rcomb_z = start_z + rdz
-        pred_ax_arr[i].plot([start_x, rcomb_x], [start_y, rcomb_y], [start_z, rcomb_z], label='Real_Velocity')
+        # Plot the real hidden state
+        if calc_hidden:
+            ind = 3 if calc_velocity else 0
+            rz = result_out[ind, 0, i]
+            pred_ax_arr[i].scatter(0, 0, rz, label='Real Hidden', color='#d15555a0')
 
-        # print the predicted trajectory
-        x = trajectories_in[0, :conf['rec_num_layers'], i]
-        y = trajectories_in[1, :conf['rec_num_layers'], i]
-        z = trajectories_in[2, :conf['rec_num_layers'], i]
-        pred_ax_arr[i].plot(x, y, z, label='Input')
-        pred_ax_arr[i].legend()
+            # print the real trajectory
+            z = prediction_out[ind, 0, i]
+            pred_ax_arr[i].scatter(0, 0, z, label='Pred Hidden', color='#870404')
+
+        if calc_velocity:
+
+            # print the predicted trajectory
+            rdx = result_out[0, 0, i]
+            rdy = result_out[1, 0, i]
+            rdz = result_out[2, 0, i]
+            rcomb_x = start_x + rdx
+            rcomb_y = start_y + rdy
+            rcomb_z = start_z + rdz
+            pred_ax_arr[i].plot([start_x, rcomb_x], [start_y, rcomb_y], [start_z, rcomb_z], label='Real_Velocity', color='#81b0f9a0')
+
+
 
     plt.pause(0.01)
 

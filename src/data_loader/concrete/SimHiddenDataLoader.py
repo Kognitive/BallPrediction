@@ -59,7 +59,7 @@ class SimHiddenDataLoader(DataLoader):
         for file in subfiles:
 
             # access the loaded trajectory
-            loaded_traj = np.loadtxt(file)[::5, 0:8]
+            loaded_traj = np.loadtxt(file)[:, 0:8]
 
             # load the positions as well as the timestamp
             data.append(loaded_traj[:, :])
