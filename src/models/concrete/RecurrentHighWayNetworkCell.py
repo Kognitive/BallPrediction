@@ -252,6 +252,20 @@ class RecurrentHighWayNetworkCell:
         # pass back both states
         return h
 
+    def num_params(self):
+
+        # the number of hidden and input units
+        nH = self.config['num_hidden']
+        nI = self.config['num_input']
+        nL = self.config['num_layers']
+        cG = self.config['coupled_gates']
+
+        # hidden states are trainable
+        num = (2 if cG else 3) * (nI * nH + (nH ** 2 if not self.config['head_of_stack'] else 0) + nH)
+        num += (nL - 1) * (2 if cG else 3) * (nH ** 2 + nH)
+
+        return num
+
     def zone_out_layer(self, x, x_prev):
         d = tf.cast(self.bern.sample([self.config['num_hidden'], 1]), tf.float32)
         res = tf.multiply(d, x_prev) + tf.multiply(1 - d, x)
