@@ -23,7 +23,7 @@
 import tensorflow as tf
 
 
-class RecurrentHighWayNetworkCell:
+class ClockworkRecurrentNetworkCell:
     """This class represents a recurrent highway network cell."""
 
     def __init__(self, config):
@@ -32,8 +32,6 @@ class RecurrentHighWayNetworkCell:
         Args:
             config: The configuration parameters
                 cell_name: The name of this cell
-                num_layers: The number of recurrent layers inside of this cell
-                coupled_gates: Boolean, stating whether C = 1 - T (Default = True)
                 head_of_stack: True, if you don't want to input the hidden state of a different cell (Default = True)
                 learn_hidden: True, if you want the hidden state to be a variable which can be learner (Default = False)
 
@@ -45,6 +43,7 @@ class RecurrentHighWayNetworkCell:
 
                 num_input: The number of input units
                 num_hidden: The number of hidden units
+                num_clockworks: The number of clockworks
 
                 seed: Represents the seed for this model
         """
@@ -251,20 +250,6 @@ class RecurrentHighWayNetworkCell:
 
         # pass back both states
         return h
-
-    def num_params(self):
-
-        # the number of hidden and input units
-        nH = self.config['num_hidden']
-        nI = self.config['num_input']
-        nL = self.config['num_layers']
-        cG = self.config['coupled_gates']
-
-        # hidden states are trainable
-        num = (2 if cG else 3) * (nI * nH + (nH ** 2 if not self.config['head_of_stack'] else 0) + nH)
-        num += (nL - 1) * (2 if cG else 3) * (nH ** 2 + nH)
-
-        return num
 
     def zone_out_layer(self, x, x_prev):
         d = tf.cast(self.bern.sample([self.config['num_hidden'], 1]), tf.float32)

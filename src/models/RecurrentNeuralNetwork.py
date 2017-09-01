@@ -101,8 +101,12 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             # define the memory state
             self.h = [tf.tile(cell.get_hidden_state(), [1, tf.shape(self.x)[2]]) for cell in self.cells]
 
+            normalized_x = self.x + tf.random_normal(tf.shape(self.x), 0.0, 0.01)
+            to_use_x = tf.cond(self.training_time, lambda: tf.identity(normalized_x), lambda: tf.identity(self.x)) \
+                if config['add_variance'] else self.x
+
             # unstack the input to a list, so it can be easier processed
-            unstacked_x = tf.unstack(self.x, axis=1)
+            unstacked_x = tf.unstack(to_use_x, axis=1)
 
             # create all 3 components of the network, from preprocess, recurrent and
             # postprocess parts of the network.
@@ -197,6 +201,17 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             cells.append(RecurrentHighWayNetworkCell(cell_config))
 
         return cells
+
+    def num_params(self):
+
+        num = 0
+        for cell in self.cells:
+            num += cell.num_params()
+
+        num += self.pre_highway_network.num_params()
+        num += self.post_highway_network.num_params()
+
+        return num
 
     def get_activation(self, name):
         if name == 'tanh':

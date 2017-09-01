@@ -45,7 +45,7 @@ from src.utils.ThreadedPause import ThreadedPause
 from src.utils.TrajectoryPlot import TrajectoryPlot
 
 # Data Settings
-data_dir = 'sim_training_data/data_v2'
+data_dir = 'sim_training_data/data_v0'
 log_dir = 'run/hidden_state_prediction'
 
 loader = SimHiddenDataLoader(data_dir)
@@ -56,6 +56,11 @@ no_user_input = False
 
 # Format settings
 line_length = 80
+
+# the reload and the last timestamp
+reload_val = False
+calc_velocity = True
+calc_hidden = True
 
 # ------------------------ SCRIPT -------------------------
 
@@ -78,6 +83,10 @@ conf, chosen_model = Configurations.get_configuration_with_model('rhn')
 if not reload:
     conf['log_dir'] = output_dir
     conf['time_stamp'] = timestamp
+    conf['num_output'] = (1 if calc_hidden else 0) + (3 if calc_velocity else 0)
+    conf['calc_hidden'] = calc_hidden
+    conf['calc_velocity'] = calc_velocity
+
 else:
     print("Restoring Configuration")
 
@@ -87,15 +96,6 @@ else:
 
 # some debug printing
 print("Creating Model")
-
-# define the model using the parameters from top
-model = chosen_model(conf)
-model.init_params()
-model_statistics = ModelStatistics()
-
-# Create the trajectory plot
-num_visualized_trajectories = 3
-trajectory_plot = TrajectoryPlot(num_visualized_trajectories)
 
 print(line)
 
@@ -115,6 +115,16 @@ slices_tr = permutation[num:]
 # transform the data
 validation_set_in, validation_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_va], I, K)
 training_set_in, training_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_tr], I, K)
+
+assert calc_velocity or calc_hidden
+
+if calc_velocity and not calc_hidden:
+    validation_set_out = validation_set_out[0:3, :, :]
+    training_set_out = training_set_out[0:3, :, :]
+
+if calc_hidden and not calc_velocity:
+    validation_set_out = validation_set_out[3:4, :, :]
+    training_set_out = training_set_out[3:4, :, :]
 
 # define the size of training and validation set
 conf['tr_size'] = np.size(training_set_in, 2)
@@ -138,7 +148,20 @@ print("Model configuration saved on disk.")
 print(line)
 
 # some debug printing
-print("Model: " + model.name)
+
+# define the model using the parameters from top
+model = chosen_model(conf)
+model.init_params()
+conf['model_params'] = model.num_params()
+model_statistics = ModelStatistics()
+
+# Create the trajectory plot
+num_visualized_trajectories = 3
+trajectory_plot = TrajectoryPlot(num_visualized_trajectories)
+
+# some debug printing
+print(line)
+print("Model {} ({})".format(model.name, conf['model_params']))
 print(line)
 
 # create progressbar
