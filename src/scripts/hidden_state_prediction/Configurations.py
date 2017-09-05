@@ -25,9 +25,9 @@ class Configurations:
 
         # training details
         config['episodes'] = 10000
-        config['steps_per_episode'] = 10
+        config['steps_per_episode'] = 100
         config['steps_per_batch'] = 1
-        config['batch_size'] = 4096
+        config['batch_size'] = 8192
 
         # model
         model = RecurrentHighWayNetwork
@@ -55,19 +55,19 @@ class Configurations:
         config['zone_out_probability'] = 0.0
 
         # the settings for the recursive part
-        config['rec_num_hidden'] = 24
-        config['rec_num_layers'] = 2
+        config['rec_num_hidden'] = 8
+        config['rec_num_layers'] = 41
         config['rec_num_layers_student_forcing'] = 0
-        config['rec_num_layers_teacher_forcing'] = 5
-        config['rec_num_stacks'] = 2
-        config['rec_depth'] = 20
+        config['rec_num_layers_teacher_forcing'] = 41
+        config['rec_num_stacks'] = 4
+        config['rec_depth'] = 6
         config['rec_h_node_activation'] = 'tanh'
         config['rec_learnable_hidden_states'] = True
         config['rec_coupled_gates'] = True
         config['rec_layer_normalization'] = True
 
         # the settings for the preprocess network
-        config['pre_num_hidden'] = 16
+        config['pre_num_hidden'] = 8
         config['pre_num_layers'] = 4
         config['pre_in_activation'] = 'lrelu'
         config['pre_out_activation'] = 'lrelu'
@@ -76,7 +76,7 @@ class Configurations:
         config['pre_layer_normalization'] = False
 
         # the settings for the postprocess network
-        config['post_num_hidden'] = 16
+        config['post_num_hidden'] = 8
         config['post_num_layers'] = 2
         config['post_in_activation'] = 'lrelu'
         config['post_out_activation'] = 'identity'

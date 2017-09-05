@@ -39,7 +39,7 @@ from src.utils.Progressbar import Progressbar
 from src.models.RecurrentNeuralNetwork import RecurrentNeuralNetwork
 
 # Data Settings
-data_dir = 'sim_training_data/data_v0'
+data_dir = 'sim_training_data/data_v4'
 log_dir = 'run/hidden_state_prediction'
 
 loader = SimHiddenDataLoader(data_dir)
@@ -51,7 +51,7 @@ line_length = 80
 # the reload and the last timestamp
 reload = False
 reload_val = False
-last_timestamp = "2017-08-31_08-36-48"
+last_timestamp = "2017-09-02_03-02-02"
 calc_velocity = True
 calc_hidden = True
 
@@ -115,9 +115,14 @@ num = int(np.ceil(num_trajectories / 5))
 slices_va = permutation[:num]
 slices_tr = permutation[num:]
 
+print("Splitting Validation Data")
+
 # transform the data
 validation_set_in, validation_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_va], I, K)
+print("Splitted Validation Data")
+print("Splitting Training Data")
 training_set_in, training_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_tr], I, K)
+print("Splitted Training Data")
 
 assert calc_velocity or calc_hidden
 
@@ -211,12 +216,12 @@ if reload:
     train_error = np.load(conf['log_dir'] + 'general/tr_error.npy')
 
     # check if validation error gets better
-    mean_val = np.mean(validation_error, axis=0)[:, 0:s_episode]
+    mean_val = np.mean(validation_error, axis=0)[0:s_episode]
     best_val_episode = np.argmin(mean_val)
     best_val_error = np.min(mean_val)
 
     # training error as well
-    mean_tra = np.mean(train_error, axis=0)[:, 0:s_episode]
+    mean_tra = np.mean(train_error, axis=0)[0:s_episode]
     best_tr_episode = np.argmin(mean_tra)
     best_tr_error = np.min(mean_tra)
 
@@ -303,7 +308,7 @@ for episode in range(s_episode, episodes):
         x = trajectories_in[0, :conf['rec_num_layers'], i]
         y = trajectories_in[1, :conf['rec_num_layers'], i]
         z = trajectories_in[2, :conf['rec_num_layers'], i]
-        pred_ax_arr[i].plot(x, y, z, label='Input', color='b')
+        pred_ax_arr[i].plot(x, y, z, label='Input', color='#1e9646')
 
         # print the predicted trajectory
         start_x = trajectories_in[0, -(conf['rec_num_layers_teacher_forcing'] + 1), i]
