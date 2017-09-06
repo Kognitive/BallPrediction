@@ -325,7 +325,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
     def save(self, folder):
         """This method saves the model at the specified checkpoint."""
-        all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        all_vars = self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
         all_values = self.sess.run(all_vars)
 
         for k in range(len(all_values)):
@@ -334,7 +334,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
     def restore(self, folder):
         """This method restores the model from the specified folder."""
-        all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        all_vars = self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
 
         assign_list = list()
         for k in range(len(all_vars)):

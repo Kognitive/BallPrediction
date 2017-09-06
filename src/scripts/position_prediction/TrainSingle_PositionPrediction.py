@@ -24,33 +24,38 @@
 import datetime
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import os
 import configparser
+import threading
+
 from localconfig import config
 
 # import live plot
 from src.plots.LivePlot import LivePlot
+
 
 from src.data_loader.concrete.SimDataLoader import SimDataLoader
 from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 from src.scripts.position_prediction.Configurations import Configurations
 from src.utils.Progressbar import Progressbar
 from src.models.RecurrentNeuralNetwork import RecurrentNeuralNetwork
+from src.utils.ModelStatistics import ModelStatistics
+from src.utils.LogDirectoryHelper import LogDirectoryHelper
+from src.utils.ThreadedPause import ThreadedPause
+from src.utils.TrajectoryPlot import TrajectoryPlot
 
 # Data Settings
-data_dir = 'sim_training_data/data_v1'
+data_dir = 'sim_training_data/data_v2'
 log_dir = 'run/position_prediction'
 
 loader = SimDataLoader(data_dir)
-show_train_error = True
+
+# Set to true if you want to run this script without user interaction
+# This will automatically create the log directory as a new directory with the current timestamp as name
+no_user_input = False
 
 # Format settings
 line_length = 80
-
-# the reload and the last timestamp
-reload = True
-last_timestamp = "2017-08-30_20-34-22"
 
 # ------------------------ SCRIPT -------------------------
 
@@ -60,36 +65,20 @@ print(line)
 print("Creating log directory")
 
 # create the timestamp
-timestamp = '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now()) if not reload else last_timestamp
+timestamp = '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now())
 
 old_output_dir = log_dir + "/"
-output_dir = log_dir + "/" + timestamp + "_RUNNING/"
-if not os.path.exists(output_dir):
-    if reload: raise RuntimeError("This timestamp can't be reloaded")
-    os.makedirs(output_dir)
 
-if not os.path.exists(output_dir + "general"):
-    if reload: raise RuntimeError("This timestamp can't be reloaded")
-    os.makedirs(output_dir + "general")
-
-# create the model folders
-if not os.path.exists(output_dir + "mod_tr"):
-    os.makedirs(output_dir + "mod_tr")
-
-if not os.path.exists(output_dir + "mod_va"):
-    os.makedirs(output_dir + "mod_va")
+output_dir, reload = LogDirectoryHelper.create(log_dir, timestamp, no_user_input)
 
 # retrieve the model
 conf, chosen_model = Configurations.get_configuration_with_model('rhn')
 
 # check if it should be reloaded or not
 if not reload:
-
     conf['log_dir'] = output_dir
     conf['time_stamp'] = timestamp
-
 else:
-
     print("Restoring Configuration")
 
     # first of all restore the configuration
@@ -102,6 +91,11 @@ print("Creating Model")
 # define the model using the parameters from top
 model = chosen_model(conf)
 model.init_params()
+model_statistics = ModelStatistics()
+
+# Create the trajectory plot
+num_visualized_trajectories = 3
+trajectory_plot = TrajectoryPlot(num_visualized_trajectories)
 
 print(line)
 
@@ -109,7 +103,7 @@ print(line)
 I = conf['rec_num_layers']
 K = conf['rec_num_layers_student_forcing']
 
-# load trajectories, split them up and transform them
+# load trajectories and split them into training and validation set
 trajectories = loader.load_complete_data()
 path_count = len(trajectories)
 num_trajectories = path_count
@@ -143,137 +137,104 @@ print("Model configuration saved on disk.")
 # upload the data
 print(line)
 
-# define the overall error
-episodes = conf['episodes']
-validation_error = np.zeros(episodes)
-train_error = np.zeros(episodes)
-overall_error = np.zeros([2, episodes])
-
 # some debug printing
 print("Model: " + model.name)
 print(line)
 
 # create progressbar
-p_bar = Progressbar(episodes, line_length)
-
-# create the figures appropriately
-fig_error = plt.figure(0)
-fig_pred = plt.figure(1)
-
-# create the array of subplots
-num_traj = 3
-ax_arr = [None] * (num_traj * 2)
-
-# create all subplots
-for k in range(num_traj * 2):
-    num = 2 * 100 + num_traj * 10 + (k + 1)
-    ax_arr[k] = fig_pred.add_subplot(num, projection='3d')
-
-# set interactive mode on
-plt.ion()
+p_bar = Progressbar(conf['episodes'], line_length)
 
 # sample some trajectories to display
-val_display_slices = np.random.permutation(conf['va_size'])[:num_traj]
-tr_display_slices = np.random.permutation(conf['tr_size'])[:num_traj]
+val_display_slices = np.random.permutation(conf['va_size'])[:num_visualized_trajectories]
+tr_display_slices = np.random.permutation(conf['tr_size'])[:num_visualized_trajectories]
 
 if reload: model.restore('general')
 s_episode = model.get_episode()
 
-# check if validation error gets better
-best_val_episode = 0
-best_val_error = 1000000000
-
-best_tr_episode = 0
-best_tr_error = 1000000000
-
 if reload:
-    validation_error[0:s_episode] = np.load(conf['log_dir'] + 'general/va_error.npy')
-    train_error[0:s_episode] = np.load(conf['log_dir'] + 'general/tr_error.npy')
+    train_error_single = np.load(conf['log_dir'] + 'general/tr_error.npy')
+    validation_error_single = np.load(conf['log_dir'] + 'general/va_error.npy')
+    model_statistics.init(train_error_single, validation_error_single)
 
-    # check if validation error gets better
-    best_val_episode = np.argmin(validation_error[0:s_episode])
-    best_val_error = np.min(validation_error[0:s_episode])
+semaphore = threading.Semaphore()
+update = False
 
-    best_tr_episode = np.argmin(train_error[0:s_episode])
-    best_tr_error = np.min(train_error[0:s_episode])
 
-# set the range
-for episode in range(s_episode, episodes):
+def train():
+    global model, conf, s_episode, model_statistics, trajectory_plot, p_bar
+    global training_set_in, training_set_out, validation_set_in, validation_set_out
+    global val_display_slices, tr_display_slices
+    global semaphore, update
+    # set the range
+    for episode in range(s_episode, conf['episodes']):
+        # execute as much episodes
+        for step in range(conf['steps_per_episode']):
+            # sample them randomly according to the batch size
+            slices = np.random.randint(0, conf['tr_size'], conf['batch_size'])
+            # train the model
+            model.train(training_set_in[:, :, slices], training_set_out[:, :, slices], conf['steps_per_batch'])
 
-    # execute as much episodes
-    for step in range(conf['steps_per_episode']):
+        # increase the episode
+        model.inc_episode()
 
-        # sample them randomly according to the batch size
-        slices = np.random.randint(0, conf['tr_size'], conf['batch_size'])
+        # calculate validation error
+        validation_error, validation_error_single = model.validate(validation_set_in, validation_set_out, True)
+        train_error, train_error_single = model.validate(training_set_in, training_set_out, False)
 
-        # train the model
-        model.train(training_set_in[:, :, slices], training_set_out[:, :, slices], conf['steps_per_batch'])
+        # calculate 6 predictions for visualization (3 x validation, 3 x training)
+        trajectories_in = np.concatenate((validation_set_in[:, :, val_display_slices],
+                                          training_set_in[:, :, tr_display_slices]), 2)
+        trajectories_out = np.concatenate((validation_set_out[:, :, val_display_slices],
+                                           training_set_out[:, :, tr_display_slices]), 2)
+        prediction_out = np.asarray(model.predict(trajectories_in))[0]
 
-    # increase the episode
-    model.inc_episode()
+        # update plot data
+        semaphore.acquire()
 
-    # calculate validation error
-    validation_error[episode], _ = model.validate(validation_set_in, validation_set_out, True)
-    train_error[episode], _ = model.validate(training_set_in, training_set_out, False)
+        model_statistics.update(train_error, train_error_single, validation_error, validation_error_single)
+        trajectory_plot.update_trajectories(trajectories_in, trajectories_out, prediction_out)
 
-    # save the model including the validation error and training error
-    model.save('general')
-    np.save(conf['log_dir'] + 'general/va_error.npy', validation_error[0:episode + 1])
-    np.save(conf['log_dir'] + 'general/tr_error.npy', train_error[0:episode + 1])
+        update = True
 
-    # check if we have to update our best error
-    if best_val_error > validation_error[episode]:
-        best_val_episode = episode
-        best_val_error = validation_error[episode]
-        model.save('mod_va')
+        semaphore.release()
 
-        # check if we have to update our best error
-    if best_tr_error > train_error[episode]:
-        best_tr_episode = episode
-        best_tr_error = train_error[episode]
-        model.save('mod_tr')
+        # save the model including the validation error and training error
+        model.save('general')
+        np.save(conf['log_dir'] + 'general/va_error.npy', model_statistics.validation_error_single)
+        np.save(conf['log_dir'] + 'general/tr_error.npy', model_statistics.train_error_single)
 
-    # draw the training error and validation error
-    plt.figure(0)
-    plt.clf()
-    fig_error.suptitle("Error is: " + str(validation_error[episode]))
-    plt.plot(np.linspace(0, episode, episode + 1), validation_error[0:episode + 1], color='r', label='Validation Error')
-    plt.plot(np.linspace(0, episode, episode + 1), train_error[0:episode + 1], color='b', label='Training Error')
-    plt.legend()
+        best_validation_episode, best_training_episode = model_statistics.get_best_episode()
 
-    # display 4 predictions (2 x validation, 2 x training)
-    trajectories_in = np.concatenate((validation_set_in[:, :, val_display_slices], training_set_in[:, :, tr_display_slices]), 2)
-    trajectories_out = np.concatenate((validation_set_out[:, :, val_display_slices], training_set_out[:, :, tr_display_slices]), 2)
-    prediction_out = np.asarray(model.predict(trajectories_in))[0]
+        # Save model if it has the best validation or training error
+        if best_validation_episode == episode:
+            model.save('mod_va')
+        if best_training_episode == episode:
+            model.save('mod_tr')
 
-    # print the trajectories
-    for i in range(num_traj * 2):
+        # update progressbar
+        p_bar.progress()
 
-        ax_arr[i].cla()
+    os.rename(output_dir, old_output_dir + str(model.validation_error[-1]))
 
-        # print the real trajectory
-        x = trajectories_out[0, :, i]
-        y = trajectories_out[1, :, i]
-        z = trajectories_out[2, :, i]
-        ax_arr[i].plot(x, y, z, label='Real')
 
-        # print the predicted trajectory
-        x = prediction_out[0, :, i]
-        y = prediction_out[1, :, i]
-        z = prediction_out[2, :, i]
-        ax_arr[i].plot(x, y, z, label='Prediction')
+def plot():
+    global model_statistics, trajectory_plot
+    global semaphore, update
+    semaphore.acquire()
+    if update:
+        # plot the training error, validation error and the trajectories
+        model_statistics.plot()
+        trajectory_plot.plot()
 
-        # print the predicted trajectory
-        x = trajectories_in[0, :, i]
-        y = trajectories_in[1, :, i]
-        z = trajectories_in[2, :, i]
-        ax_arr[i].plot(x, y, z, label='Input')
-        ax_arr[i].legend()
+        update = False
+    semaphore.release()
 
-    plt.pause(0.01)
+if __name__ == '__main__':
+    # set interactive mode on
+    plt.ion()
 
-    # update progressbar
-    p_bar.progress()
-
-plt.ioff()
-os.rename(output_dir, old_output_dir + str(validation_error[episodes - 1]))
+    thread = threading.Thread(None, train, "Training Thread")
+    thread.start()
+    while thread.is_alive():
+        plot()
+        ThreadedPause.pause(2)
