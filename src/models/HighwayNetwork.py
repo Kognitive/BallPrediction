@@ -50,11 +50,11 @@ class HighwayNetwork:
 
             I = self.config['num_input']
             H = self.config['num_hidden']
-            O = self.config['num_output']
+            O = self.config['num_output'] + self.config['num_class_slots']
 
             self.test_hidden = self.config['num_output'] if self.config['num_layers'] == 0 else self.config['num_hidden']
 
-            if self.config['num_input'] != self.test_hidden:
+            if I != self.test_hidden:
                 tf.get_variable("W_in", [H, I], dtype=tf.float32, initializer=self.weights_initializer)
                 tf.get_variable("b_in", [H, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
@@ -62,7 +62,7 @@ class HighwayNetwork:
             for k in range(self.config['num_layers']):
                 self.init_highway_layer(k)
 
-            if self.test_hidden != self.config['num_output']:
+            if self.test_hidden != O:
                 tf.get_variable("W_out", [O, H], dtype=tf.float32, initializer=self.weights_initializer)
                 tf.get_variable("b_out", [O, 1], dtype=tf.float32, initializer=self.bias_initializer)
 
@@ -72,6 +72,7 @@ class HighwayNetwork:
         with tf.variable_scope(self.config['name'], reuse=True):
 
             tree = x
+            O = self.config['num_output']
 
             if self.config['num_input'] != self.test_hidden:
                 tree = self.get_activation(self.config['in_activation'])(tf.get_variable("W_in") @ tree + tf.get_variable("b_in"))

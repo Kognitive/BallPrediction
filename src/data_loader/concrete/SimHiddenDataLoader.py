@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 import numpy as np
+import pickle
 
 from os import listdir
 from os.path import isfile, join
@@ -52,6 +53,11 @@ class SimHiddenDataLoader(DataLoader):
         # get list of all subdirs
         subfiles = self.get_immediate_subfiles(self.root)
 
+        # if we already have a pickle of the data just load it
+        if join(self.root, "data.pickle") in subfiles:
+            data = pickle.load(open(join(self.root, "data.pickle"), 'rb'))
+            return data
+
         # create empty positions array
         data = list()
 
@@ -59,11 +65,13 @@ class SimHiddenDataLoader(DataLoader):
         for file in subfiles:
 
             # access the loaded trajectory
-            loaded_traj = np.loadtxt(file)[:, 0:8]
+            loaded_traj = np.loadtxt(file)[:, :]
+            loaded_traj[:, 8] = (loaded_traj[:, 8] / 2) + 0.5
 
             # load the positions as well as the timestamp
             data.append(loaded_traj[:, :])
 
+        pickle.dump(data, open(self.root + "/data.pickle", 'wb'))
         return data
 
     # this method delivers all immediate subdirectories

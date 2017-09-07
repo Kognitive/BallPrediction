@@ -52,7 +52,7 @@ loader = SimHiddenDataLoader(data_dir)
 
 # Set to true if you want to run this script without user interaction
 # This will automatically create the log directory as a new directory with the current timestamp as name
-no_user_input = False
+no_user_input = True
 
 # Format settings
 line_length = 80
@@ -95,9 +95,6 @@ else:
     config.read(output_dir + 'configuration.ini')
     conf = dict(config.items("Model"))
 
-# some debug printing
-print("Creating Model")
-
 print(line)
 
 # transformation parameters
@@ -113,6 +110,8 @@ num = int(np.ceil(num_trajectories / 5))
 slices_va = permutation[:num]
 slices_tr = permutation[num:]
 
+# upload the data
+print(line)
 print("Splitting Validation Data")
 
 # transform the data
@@ -121,16 +120,6 @@ print("Splitted Validation Data")
 print("Splitting Training Data")
 training_set_in, training_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_tr], I, K)
 print("Splitted Training Data")
-
-assert calc_velocity or calc_hidden
-
-if calc_velocity and not calc_hidden:
-    validation_set_out = validation_set_out[0:3, :, :]
-    training_set_out = training_set_out[0:3, :, :]
-
-if calc_hidden and not calc_velocity:
-    validation_set_out = validation_set_out[3:4, :, :]
-    training_set_out = training_set_out[3:4, :, :]
 
 # define the size of training and validation set
 conf['tr_size'] = np.size(training_set_in, 2)
@@ -153,17 +142,23 @@ print("Model configuration saved on disk.")
 # upload the data
 print(line)
 
+# define the overall error
+episodes = conf['episodes']
+validation_error = np.zeros((conf['num_output'], episodes))
+validation_class_error = np.zeros(episodes)
+train_error = np.zeros((conf['num_output'], episodes))
+train_class_error = np.zeros(episodes)
+
 # some debug printing
 
 # define the model using the parameters from top
+
+# some debug printing
+print("Creating Model")
+
 model = chosen_model(conf)
 model.init_params()
 conf['model_params'] = model.num_params()
-model_statistics = ModelStatistics()
-
-# Create the trajectory plot
-num_visualized_trajectories = 3
-trajectory_plot = TrajectoryPlot(num_visualized_trajectories)
 
 # some debug printing
 print(line)
@@ -171,29 +166,60 @@ print("Model {} ({})".format(model.name, conf['model_params']))
 print(line)
 
 # create progressbar
-p_bar = Progressbar(conf['episodes'], line_length)
+p_bar = Progressbar(episodes, line_length)
 
-# sample some trajectories to display
-val_display_slices = np.random.permutation(conf['va_size'])[:num_visualized_trajectories]
-tr_display_slices = np.random.permutation(conf['tr_size'])[:num_visualized_trajectories]
+# create both figures
+fig_error = plt.figure(0)
+err_axes = [None] * 3
+err_axes[0] = fig_error.add_subplot(131)
+err_axes[1] = fig_error.add_subplot(132)
+err_axes[2] = fig_error.add_subplot(133)
+plt.ion()
 
 if reload: model.restore('general')
 s_episode = model.get_episode()
 
+# check if validation error gets better
+best_val_episode = 0
+best_val_error = 1000000000
+
+best_tr_episode = 0
+best_tr_error = 1000000000
+combined_val_error = 100
+combined_tr_error = 100
+
 if reload:
-    train_error_single = np.load(conf['log_dir'] + 'general/tr_error.npy')
-    validation_error_single = np.load(conf['log_dir'] + 'general/va_error.npy')
-    model_statistics.init(train_error_single, validation_error_single)
+    train_error = np.load(conf['log_dir'] + 'general/tr_error.npy')
+    train_class_error = np.load(conf['log_dir'] + 'general/tr_class_error.npy')
+    validation_error = np.load(conf['log_dir'] + 'general/va_error.npy')
+    validation_class_error = np.load(conf['log_dir'] + 'general/va_class_error.npy')
 
-semaphore = threading.Semaphore()
+    # check if validation error gets better
+    mean_val = np.mean(validation_error, axis=0)[0:s_episode]
+    best_val_episode = np.argmin(mean_val)
+    best_val_error = np.min(mean_val)
+
+    # training error as well
+    mean_tra = np.mean(train_error, axis=0)[0:s_episode]
+    best_tr_episode = np.argmin(mean_tra)
+    best_tr_error = np.min(mean_tra)
+
+    if reload_val:
+        s_episode = best_val_episode + 1
+
 update = False
-
+semaphore = threading.Semaphore()
+saved_episode = 0
 
 def train():
-    global model, conf, s_episode, model_statistics, trajectory_plot, p_bar
+    global model, conf, s_episode, p_bar
+    global validation_class_error, validation_error, train_class_error, train_error
+    global best_val_episode, best_val_error, best_tr_episode, best_tr_error
     global training_set_in, training_set_out, validation_set_in, validation_set_out
-    global val_display_slices, tr_display_slices
+    global combined_val_error, combined_tr_error
     global semaphore, update
+    global episode, saved_episode
+
     # set the range
     for episode in range(s_episode, conf['episodes']):
         # execute as much episodes
@@ -207,53 +233,90 @@ def train():
         model.inc_episode()
 
         # calculate validation error
-        validation_error, validation_error_single = model.validate(validation_set_in, validation_set_out, True)
-        train_error, train_error_single = model.validate(training_set_in, training_set_out, False)
-
-        # calculate 6 predictions for visualization (3 x validation, 3 x training)
-        trajectories_in = np.concatenate((validation_set_in[:, :, val_display_slices],
-                                          training_set_in[:, :, tr_display_slices]), 2)
-        trajectories_out = np.concatenate((validation_set_out[:, :, val_display_slices],
-                                           training_set_out[:, :, tr_display_slices]), 2)
-        prediction_out = np.asarray(model.predict(trajectories_in))[0]
+        _, validation_error[:, episode], validation_class_error[episode] = model.validate(validation_set_in, validation_set_out, True)
+        _, train_error[:, episode], train_class_error[episode] = model.validate(training_set_in, training_set_out, False)
 
         # update plot data
         semaphore.acquire()
 
-        model_statistics.update(train_error, train_error_single, validation_error, validation_error_single)
-        trajectory_plot.update_trajectories(trajectories_in, trajectories_out, prediction_out)
-
         update = True
+        saved_episode = episode
 
         semaphore.release()
 
         # save the model including the validation error and training error
         model.save('general')
         np.save(conf['log_dir'] + 'general/va_error.npy', validation_error)
+        np.save(conf['log_dir'] + 'general/va_class_error.npy', validation_class_error)
         np.save(conf['log_dir'] + 'general/tr_error.npy', train_error)
+        np.save(conf['log_dir'] + 'general/tr_class_error.npy', train_class_error)
 
-        best_validation_episode, best_training_episode = model_statistics.get_best_episode()
+        # get the combined error
+        combined_val_error = np.mean(validation_error[:, episode])
+        combined_tr_error = np.mean(train_error[:, episode])
 
-        # Save model if it has the best validation or training error
-        if best_validation_episode == episode:
+        # check if we have to update our best error
+        if best_val_error > combined_val_error:
+            best_val_episode = episode
+            best_val_error = combined_val_error
             model.save('mod_va')
-        if best_training_episode == episode:
+
+            # check if we have to update our best error
+        if best_tr_error > combined_tr_error:
+            best_tr_episode = episode
+            best_tr_error = combined_tr_error
             model.save('mod_tr')
 
-        # update progressbar
-        p_bar.progress()
-
-    os.rename(output_dir, old_output_dir + str(model.validation_error[-1]))
+    # update progressbar
+    p_bar.progress()
 
 
 def plot():
     global model_statistics, trajectory_plot
     global semaphore, update
+    global combined_val_error, combined_tr_error
+    global model, conf, s_episode, p_bar
+    global validation_class_error, validation_error, train_class_error, train_error
+    global best_val_episode, best_val_error, best_tr_episode, best_tr_error
+    global training_set_in, training_set_out, validation_set_in, validation_set_out
+    global combined_val_error, combined_tr_error
+    global semaphore, update
+    global episode, saved_episode
+
     semaphore.acquire()
     if update:
-        # plot the training error, validation error and the trajectories
-        model_statistics.plot()
-        trajectory_plot.plot()
+
+        # draw the training error and validation error
+        plt.figure(0)
+        fig_error.suptitle("Error is: " + str(combined_val_error))
+
+        # plot the failure
+        err_axes[0].cla()
+        err_axes[0].plot(np.linspace(0, saved_episode, saved_episode + 1), validation_error[3, 0:saved_episode + 1], color='r', label='Validation Error')
+        err_axes[0].plot(np.linspace(0, saved_episode, saved_episode + 1), train_error[3, 0:saved_episode + 1], color='b', label='Training Error')
+        err_axes[0].legend()
+
+        err_axes[1].cla()
+        err_axes[1].plot(np.linspace(0, saved_episode, saved_episode + 1),
+                           np.sqrt(np.sum(np.power(validation_error[0:3, 0:saved_episode + 1], 2), axis=0)), color='r',
+                           label='Validation Error')
+        err_axes[1].plot(np.linspace(0, saved_episode, saved_episode + 1),
+                           np.sqrt(np.sum(np.power(train_error[0:3, 0:saved_episode + 1], 2), axis=0)), color='b',
+                           label='Training Error')
+        err_axes[1].legend()
+
+        va_error = validation_class_error[0:saved_episode + 1]
+        tr_error = train_class_error[0:saved_episode + 1]
+        lin_s = np.linspace(0, saved_episode, saved_episode + 1)
+
+        err_axes[2].cla()
+        err_axes[2].plot(lin_s, va_error, color='r',
+                         label='Validation Error')
+        err_axes[2].plot(lin_s, tr_error, color='b',
+                         label='Training Error')
+        err_axes[2].legend()
+        plt.pause(0.01)
+        plt.show()
 
         update = False
     semaphore.release()
@@ -267,4 +330,6 @@ if __name__ == '__main__':
     while thread.is_alive():
         plot()
         ThreadedPause.pause(2)
->>>>>>> 77bf723585f46a10ad2629713b15f122dd4aa10e
+
+
+# os.rename(output_dir, old_output_dir + str(validation_error))

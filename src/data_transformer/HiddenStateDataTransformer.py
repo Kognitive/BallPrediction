@@ -73,7 +73,7 @@ class HiddenStateDataTransformer:
                 state_queue.insert(trajectory[i, [0, 2, 4]])
                 data = state_queue.get()
                 in_data = data
-                out_data = trajectory[(i-K):(i+1), [1, 3, 5, 6]]
+                out_data = trajectory[(i-K):(i+1), [1, 3, 5, 6, 8]]
                 input_data.append(np.transpose(in_data))
                 target_data.append(np.transpose(out_data))
 
