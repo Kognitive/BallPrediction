@@ -25,34 +25,36 @@ import matplotlib.pyplot as plt
 
 from os.path import join
 
-class Stats:
 
-    def __init__(self, episodes: int, root: str, files: dict, reload: bool):
+class StatManager:
+
+    def __init__(self, episodes: int, root: str, files: dict, reload: bool, labels: list):
 
         self.stats_dict = {}
         self.output_dir = root
         self.file_count = len(files)
+        self.files = files
+        self.labels = labels
 
-        for file in files:
+        for [file, size] in files:
 
             val_list = list()
-            for prefix in ['tr', 'va']:
+            for prefix in labels:
                 jfile = "{}_{}.npy".format(prefix, file)
                 complete_file = join(root, jfile)
 
                 # Determine whether to reload the data or to create it
                 if reload:
-                    print("Restoring {}.npy".format(jfile))
+                    print("Restoring {}".format(jfile))
                     val_list.append(np.load(complete_file))
 
                 else:
-                    print("Creating {}.npy".format(jfile))
-                    val_list.append(np.zeros((files[file], episodes)))
+                    print("Creating {}".format(jfile))
+                    val_list.append(np.zeros((size, episodes)))
 
             self.stats_dict[file] = val_list
 
         # save a list of the keys
-        self.keys = list(files.keys())
         self.last_episode = -1
 
         # Create the axes for the plot
@@ -64,34 +66,40 @@ class Stats:
             num = self.file_count * 100 + 10 + i + 1
             self.plt_axes[i] = plt_error.add_subplot(num)
 
-    def store_statistics(self, current_episode, file, tr_value, va_value):
-        self.stats_dict[file][0][:, current_episode] = tr_value
-        self.stats_dict[file][1][:, current_episode] = va_value
+    def store_statistics(self, current_episode, errors):
+
+        for error_index in range(len(errors)):
+            error = errors[error_index]
+
+            fi = 0
+            for [file, si] in self.files:
+                self.stats_dict[file][error_index][:, current_episode] = error[fi:fi+si]
+                fi += si
+
         self.last_episode = current_episode
 
     def save_statistics(self):
 
-        prefix_list = ['tr', 'va']
-        for file in self.stats_dict:
-            for i in range(2):
-                complete_file = join(self.output_dir, "{}_{}".format(prefix_list[i], file))
-                np.save(complete_file, self.stats_dict[file][i])
+        for [file, _] in self.files:
+            for li in range(len(self.labels)):
+                label = self.labels[li]
+                complete_file = join(self.output_dir, "{}_{}".format(label, file))
+                np.save(complete_file, self.stats_dict[file][li])
 
     def plot(self):
 
         # iterate over the files
         for i in range(self.file_count):
-            key = self.keys[i]
+            key = self.files[i][0]
 
             # clear axes
             ax = self.plt_axes[i]
             ax.cla()
 
-            # get va and tr
-            tr = np.mean(self.stats_dict[key][0][:, :self.last_episode + 1], axis=0)
-            va = np.mean(self.stats_dict[key][1][:, :self.last_episode + 1], axis=0)
+            # plot for all sets
+            for li in range(len(self.labels)):
+                m = np.mean(self.stats_dict[key][li][:, :self.last_episode + 1], axis=0)
+                ax.plot(m, label=self.labels[li])
 
-            ax.title.set_text('{} is {}'.format(key, va[-1]))
-            ax.plot(va, color='r', label="Validation")
-            ax.plot(tr, color='b', label="Training")
+            ax.title.set_text('{} is {}'.format(key, m[-1]))
             ax.legend()

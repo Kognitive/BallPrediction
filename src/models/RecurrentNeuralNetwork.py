@@ -23,12 +23,11 @@
 import numpy as np
 import tensorflow as tf
 
-from src.models.RecurrentPredictionModel import RecurrentPredictionModel
 from src.models.HighwayNetwork import HighwayNetwork
 from src.models.concrete.RecurrentHighWayNetworkCell import RecurrentHighWayNetworkCell
 
 
-class RecurrentNeuralNetwork(RecurrentPredictionModel):
+class RecurrentNeuralNetwork:
     """This model represents a standard recurrent neural network."""
 
     def __init__(self, config):
@@ -54,7 +53,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # Save configuration and call the base class
         self.config = config
-        super().__init__(config['unique_name'])
+        self.name = config['unique_name']
 
         # create a new session for running the model
         # the session is not visible to the callee
@@ -85,7 +84,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             # ----------------------- VARIABLES & PLACEHOLDER ---------------------------
 
             self.global_step = tf.Variable(0, trainable=False, name='global_step')
-            self.global_episode = tf.Variable(0, trainable=False, name='global_episode')
 
             # X and Y Tensor
             self.x = tf.placeholder(tf.float32, [config['num_input'],
@@ -136,13 +134,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
             # So far we have got the model
             self.error = 0.5 * tf.reduce_mean(squared_err)
-            self.a_error = tf.reduce_mean(tf.sqrt(tf.reduce_sum(squared_err, axis=0)), name="a_error")
-            self.single_error = tf.reduce_mean(tf.reduce_mean(tf.abs(err), axis=1), axis=1, name="single_error")
-
-            # increment global episode
-            self.inc_global_episode = tf.assign(self.global_episode,
-                                                self.global_episode + 1,
-                                                name='inc_global_episode')
+            self.single_absolute_error = tf.reduce_sum(tf.reduce_mean(tf.abs(err), axis=1), axis=1)
 
             # create minimizer
             self.learning_rate = tf.train.exponential_decay(
@@ -383,14 +375,13 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         for k in range(steps):
             self.sess.run([self.minimizer], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: True})
 
-    def validate(self, trajectories, target_trajectories, test=True, batch_size=131072):
+    def validate(self, trajectories, target_trajectories, batch_size=131072):
         """This method basically validates the passed trajectories.
         It therefore splits them up so that the future frame get passed as the target.
 
         Args:
             trajectories: The trajectories to use for validation.
             target_trajectories: The target trajectories
-            test: True, if validated on test error
 
         Returns:
             The error on the passed trajectories
@@ -400,32 +391,28 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         num_sets = int(np.floor((num_trajectories - 1) / batch_size))
 
         # create the errors
-        overall_error = 0
-        overall_single_error = 0
-        s_div = 0
-        a_div = 0
+        overall_absolute_error = 0
+        division_factor = 0
 
         # iterate over the number of sets
         for k in range(num_sets + 1):
             batch_trajectories = trajectories[:, :, k*batch_size:(k+1)*batch_size]
             batch_target_trajectories = target_trajectories[:, :, k*batch_size:(k+1)*batch_size]
 
-            aerror, serror, episode = self.sess.run([self.a_error, self.single_error, self.global_episode], feed_dict={self.x: batch_trajectories, self.y: batch_target_trajectories, self.training_time: False})
+            # get the single single absolute error on the current batch
+            feed_dict = {
+                self.x: batch_trajectories,
+                self.y: batch_target_trajectories,
+                self.training_time: False
+            }
+            single_absolute_error = self.sess.run(self.single_absolute_error, feed_dict)
 
-            # add the errors
-            s_mult = np.size(batch_trajectories, 2)
-            a_mult = np.size(batch_trajectories, 1) * np.size(batch_trajectories, 2)
+            # add to the overall error
+            overall_absolute_error += single_absolute_error
+            division_factor += np.size(batch_trajectories, 2)
 
-            overall_error += a_mult * aerror
-            overall_single_error += s_mult * serror
-            s_div += s_mult
-            a_div += a_mult
-
-
-        overall_error /= a_div
-        overall_single_error /= s_div
-
-        return overall_error, overall_single_error
+        # pass back the mean error
+        return overall_absolute_error / division_factor
 
     def predict(self, trajectories):
         return self.sess.run([self.target_y], feed_dict={self.x: trajectories, self.training_time: False})

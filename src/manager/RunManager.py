@@ -1,19 +1,41 @@
+# MIT License
+#
+# Copyright (c) 2017 Markus Semmler, Stefan Fabian
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 import os
 import datetime
 import configparser
-import numpy as np
 
 from os.path import join
 from localconfig import config
-from src.scripts.hidden_state_prediction.Configurations import Configurations
-from src.run_manager.Stats import Stats
+from src.manager.StatManager import StatManager
+
 
 class RunManager:
 
     def __init__(self, conf: dict):
         """This class can be used to manage the access to the LogDirectory.
 
-        :param config A dict containing the configuration
+        Args:
+            config - A dict containing the configuration
             root_dir - The root directory
             reload_dir - None if it should not be reloaded, Otherwise the directory to load
             use_wizard - True, if a wizard should ask for the name
@@ -38,7 +60,6 @@ class RunManager:
         # Create the structures if necessary
         print("Init structure in {}.".format(self.output_dir))
         self.create_folder_structure()
-        self.model, self.model_config = self.get_model_config()
 
         # reload the state if necessary
         if self.reload:
@@ -73,7 +94,23 @@ class RunManager:
 
         self.model.save(checkpoint)
 
-    def init_model(self):
+    def init_model(self, model_details):
+
+        [self.model_config, self.model] = model_details
+
+        # When the model is not reloaded put in some details
+        if not self.reload:
+            self.model_config['log_dir'] = self.output_dir
+            self.model_config['time_stamp'] = self.timestamp
+
+        # Otherwise reload from the specified folder
+        else:
+
+            # reload the config
+            config.read(join(self.output_dir, 'configuration.ini'))
+            self.model_config = dict(config.items("Model"))
+
+
         self.model = self.model(self.model_config)
         self.model.init_params()
         self.model_config['model_params'] = self.model.num_params()
@@ -85,7 +122,11 @@ class RunManager:
             self.model.restore(self.config['reload_checkpoint'])
 
     def create_stats(self):
-        return Stats(self.model_config['episodes'], self.output_dir, self.config['files'], self.reload)
+        return StatManager(self.model_config['episodes'],
+                           self.output_dir,
+                           self.config['data_grouping'],
+                           self.reload,
+                           self.config['set_labels'])
 
     def create_folder_structure(self):
         """This method creates the folder structure if necessary."""
@@ -95,32 +136,9 @@ class RunManager:
             os.makedirs(join(self.output_dir, 'general'))
             os.makedirs(join(self.output_dir, 'best'))
 
-    def get_model_config(self):
-        """This method delivers the model as well as the configuration. It therefore
-        decides whether to load it from HD or to create it"""
-
-        # retrieve the model and the standard_configuration
-        model_config, model = Configurations.get_configuration_with_model(self.config['model'])
-
-        # When the model is not reloaded put in some details
-        if not self.reload:
-            model_config['log_dir'] = self.output_dir
-            model_config['time_stamp'] = self.timestamp
-
-        # Otherwise reload from the specified folder
-        else:
-
-            # reload the config
-            config.read(join(self.output_dir, 'configuration.ini'))
-            model_config = dict(config.items("Model"))
-
-        return model, model_config
-
     def write_model_config(self):
         """This method writes the passed model configuration inside of the output
         directory.
-
-        :param model_config The configuration of the model itself.
         """
 
         print("Saving model configuration to disk.")
