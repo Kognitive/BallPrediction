@@ -24,39 +24,57 @@ import numpy as np
 import pickle
 
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, join, exists
 
-from src.data_loader.DataLoader import DataLoader
-
-# This class can be used to load the trajectories from the HD. The
-# output format itself is a trajectory of x-y-z coordinates. The whole
-# loader is designed in a lazy style.
+from src.data_manager.DataManager import DataManager
+from src.data_transformer.HiddenStateDataTransformer import HiddenStateDataTransformer
 
 
-class SimHiddenDataLoader(DataLoader):
+class SimHiddenDataManager(DataManager):
+    """This class can be used to load the trajectories from the HD. The
+    output format itself is a trajectory of x-y-z coordinates. The whole
+    loader is designed in a lazy style."""
 
-    # this is the constructor for a simulation training data adapter
-    #
-    #   root - The root folder for the data.
-    #
-    def __init__(self, root):
+    def __init__(self, config):
 
         # define a counter
         super().__init__()
 
         # set boolean flag to false
-        self.root = root
+        self.config = config
 
-    # this method loads the data
+    def get_transformed_data(self, split):
+
+        # load trajectories, split them up and transform them
+        trajectories = self.load_complete_data()
+
+        print("Splitting Data")
+        path_count = len(trajectories)
+        num_trajectories = path_count
+        permutation = np.random.permutation(path_count)[:num_trajectories]
+        num = int(np.ceil(num_trajectories / split))
+        slices_va = permutation[:num]
+        slices_tr = permutation[num:]
+
+        # extract parameters
+        I = self.config['I']
+        K = self.config['K']
+
+        print("Transforming Data")
+        validation_set_in, validation_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_va], I, K)
+        training_set_in, training_set_out = HiddenStateDataTransformer.transform([trajectories[i] for i in slices_tr], I, K)
+
+        return [validation_set_in, validation_set_out], [training_set_in, training_set_out]
+
     def load_data(self):
 
-        # get list of all subdirs
-        subfiles = self.get_immediate_subfiles(self.root)
-
         # if we already have a pickle of the data just load it
-        if join(self.root, "data.pickle") in subfiles:
-            data = pickle.load(open(join(self.root, "data.pickle"), 'rb'))
+        if exists(join(self.config['data_dir'], "data.pickle")):
+            data = pickle.load(open(join(self.config['data_dir'], "data.pickle"), 'rb'))
             return data
+
+        # get list of all subdirs
+        subfiles = self.get_immediate_subfiles(self.config['data_dir'])
 
         # create empty positions array
         data = list()
@@ -71,7 +89,7 @@ class SimHiddenDataLoader(DataLoader):
             # load the positions as well as the timestamp
             data.append(loaded_traj[:, :])
 
-        pickle.dump(data, open(self.root + "/data.pickle", 'wb'))
+        pickle.dump(data, open(self.config['data_dir'] + "/data.pickle", 'wb'))
         return data
 
     # this method delivers all immediate subdirectories

@@ -26,14 +26,14 @@ import pickle
 from os import listdir
 from os.path import isfile, join
 
-from src.data_loader.DataLoader import DataLoader
+from src.data_manager.DataManager import DataManager
 
 # This class can be used to load the trajectories from the HD. The
 # output format itself is a trajectory of x-y-z coordinates. The whole
 # loader is designed in a lazy style.
 
 
-class SimDataLoader(DataLoader):
+class SimDataLoader(DataManager):
 
     # this is the constructor for a simulation training data adapter
     #

@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-from src.data_loader.concrete.SimDataLoader import SimDataLoader
+from src.data_manager.concrete.SimDataLoader import SimDataLoader
 from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 from src.models.concrete.LSTM import LSTM
 from src.utils.Progressbar import Progressbar

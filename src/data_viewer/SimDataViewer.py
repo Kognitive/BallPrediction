@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 # import necessary packages
-from src.data_loader.concrete.SimDataLoader import SimDataLoader
+from src.data_manager.concrete.SimDataLoader import SimDataLoader
 from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 
 # select one trajectory

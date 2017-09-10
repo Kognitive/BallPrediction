@@ -20,29 +20,26 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import configparser
 # import the training controller
 import datetime
-import numpy as np
-import matplotlib.pyplot as plt
 import os
-import configparser
 import threading
 
+import matplotlib.pyplot as plt
+import numpy as np
 from localconfig import config
 
-# import live plot
-from src.plots.LivePlot import LivePlot
-
-
-from src.data_loader.concrete.SimDataLoader import SimDataLoader
+from src.data_manager.concrete.SimDataLoader import SimDataLoader
 from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
+from src.run_manager.RunManager import RunManager
 from src.scripts.position_prediction.Configurations import Configurations
-from src.utils.Progressbar import Progressbar
-from src.models.RecurrentNeuralNetwork import RecurrentNeuralNetwork
 from src.utils.ModelStatistics import ModelStatistics
-from src.utils.LogDirectoryHelper import LogDirectoryHelper
+from src.utils.Progressbar import Progressbar
 from src.utils.ThreadedPause import ThreadedPause
 from src.utils.TrajectoryPlot import TrajectoryPlot
+
+# import live plot
 
 # Data Settings
 data_dir = 'sim_training_data/data_v2'
@@ -69,7 +66,7 @@ timestamp = '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now())
 
 old_output_dir = log_dir + "/"
 
-output_dir, reload = LogDirectoryHelper.create(log_dir, timestamp, no_user_input)
+output_dir, reload = RunManager.create(log_dir, timestamp, no_user_input)
 
 # retrieve the model
 conf, chosen_model = Configurations.get_configuration_with_model('rhn')
@@ -164,7 +161,8 @@ def train():
     global model, conf, s_episode, model_statistics, trajectory_plot, p_bar
     global training_set_in, training_set_out, validation_set_in, validation_set_out
     global val_display_slices, tr_display_slices
-    global semaphore, update
+    global semaphore
+
     # set the range
     for episode in range(s_episode, conf['episodes']):
         # execute as much episodes

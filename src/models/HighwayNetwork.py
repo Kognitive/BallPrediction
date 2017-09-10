@@ -50,7 +50,7 @@ class HighwayNetwork:
 
             I = self.config['num_input']
             H = self.config['num_hidden']
-            O = self.config['num_output'] + self.config['num_class_slots']
+            O = self.config['num_output']
 
             self.test_hidden = self.config['num_output'] if self.config['num_layers'] == 0 else self.config['num_hidden']
 

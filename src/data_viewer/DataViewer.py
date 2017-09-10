@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # import necessary packages
-from src.data_loader.concrete.RealDataLoader import RealDataLoader
+from src.data_manager.concrete.RealDataLoader import RealDataLoader
 from src.data_filter.concrete.LowPassFilter import LowPassFilter
 
 # load the data

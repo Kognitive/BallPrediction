@@ -22,7 +22,7 @@
 
 import numpy as np
 
-from src.data_loader.concrete.SimDataLoader import SimDataLoader
+from src.data_manager.concrete.SimDataLoader import SimDataLoader
 from src.data_transformer.FeedForwardDataTransformer import FeedForwardDataTransformer
 # we want to evaluate the LSTM
 from src.models.concrete.LSTM import LSTM

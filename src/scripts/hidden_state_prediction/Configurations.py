@@ -27,29 +27,29 @@ class Configurations:
         config['episodes'] = 10000
         config['steps_per_episode'] = 100
         config['steps_per_batch'] = 1
-        config['batch_size'] = 8192
+        config['batch_size'] = 4096
 
         # model
         model = RecurrentHighWayNetwork
 
         # basic properties of a model
         config['unique_name'] = "RecurrentHighWayNetwork"
-        config['seed'] = 3
+        config['seed'] = 28
 
         # data details
         config['num_input'] = 3
         config['num_output'] = 4
-        config['num_class_slots'] = 1
+        config['num_class_slots'] = 0
         config['distance_model'] = False
         config['add_variance'] = False
 
-        # minimizer settings (Adam doesn't use the parameters)
-        config['minimizer'] = 'adam'
-        config['momentum'] = 0.95
+        # minimizer settings (Adam doesn't  Tee zu lernen
         config['lr_rate'] = 0.01
         config['lr_decay_steps'] = 100
         config['lr_decay_rate'] = 0.85
         config['clip_norm'] = 10
+        config['momentum'] = 0.95
+        config['minimizer'] = 'adam'
 
         # regularization parameters
         config['dropout_prob'] = 1.0
@@ -57,7 +57,7 @@ class Configurations:
 
         # the settings for the recursive part
         config['rec_num_hidden'] = 32
-        config['rec_num_layers'] = 41
+        config['rec_num_layers'] = 33
         config['rec_num_layers_student_forcing'] = 0
         config['rec_num_layers_teacher_forcing'] = 0
         config['rec_num_stacks'] = 4
@@ -68,21 +68,21 @@ class Configurations:
         config['rec_layer_normalization'] = True
 
         # the settings for the preprocess network
-        config['pre_num_hidden'] = 32
+        config['pre_num_hidden'] = 16
         config['pre_num_layers'] = 4
         config['pre_in_activation'] = 'lrelu'
         config['pre_out_activation'] = 'lrelu'
         config['pre_h_node_activation'] = 'tanh'
         config['pre_coupled_gates'] = True
-        config['pre_layer_normalization'] = False
+        config['pre_layer_normalization'] = True
 
-        # the settings for the postprocess network
+        # the settings for the post process network
         config['post_num_hidden'] = 32
         config['post_num_layers'] = 2
         config['post_in_activation'] = 'lrelu'
         config['post_out_activation'] = 'identity'
         config['post_h_node_activation'] = 'tanh'
         config['post_coupled_gates'] = True
-        config['post_layer_normalization'] = False
+        config['post_layer_normalization'] = True
 
         return config, model

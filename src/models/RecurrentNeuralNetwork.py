@@ -56,6 +56,10 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         self.config = config
         super().__init__(config['unique_name'])
 
+        # create a new session for running the model
+        # the session is not visible to the callee
+        self.sess = tf.Session()
+
         # use the name of the model as a first variable scope
         with tf.variable_scope(config['unique_name']):
 
@@ -92,14 +96,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
                                                  config['rec_num_layers_student_forcing'] + config['rec_num_layers_teacher_forcing'] + 1,
                                                  None], name="target")
 
-            if config['num_class_slots'] > 0:
-                self.labels = tf.placeholder(tf.int32, [config['rec_num_layers_student_forcing'] + config[
-                                                         'rec_num_layers_teacher_forcing'] + 1, None], name="labels")
-                lst_target_labels = tf.unstack(self.labels, axis=0)
-
-            else:
-                lst_target_labels = None
-
             # --------------------------------- GRAPH ------------------------------------
 
             # define the memory state
@@ -116,23 +112,20 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             # postprocess parts of the network.
             processed_unstacked_x = self.get_input_to_hidden_network(unstacked_x)
             lst_h = self.get_hidden_to_hidden_network(config, processed_unstacked_x, self.h)
-            cut_lst_h = lst_h[-(config['rec_num_layers_teacher_forcing'] + 1):]
+            cutted_lst_h = lst_h[-(config['rec_num_layers_teacher_forcing'] + 1):]
 
             # create the outputs for each element in the list
-            lst_output, pred_labels, class_error, loss = self.get_hidden_to_output_network(cut_lst_h, lst_target_labels)
+            lst_output = self.get_hidden_to_output_network(cutted_lst_h)
 
             # apply some student forcing
             for self_l in range(config['rec_num_layers_student_forcing']):
                 added_model = lst_output[-1] + (0 if not config['distance_model'] else unstacked_x[-1])
                 unstacked_x.append(added_model)
                 processed_self_x_in = self.get_input_to_hidden_network([added_model])
-                h = self.get_hidden_to_hidden_network(config, processed_self_x_in, cut_lst_h[-1])
-                outputs, _, _, _ = self.get_hidden_to_output_network(h, lst_target_labels)
-                lst_output.append(outputs[0])
+                h = self.get_hidden_to_hidden_network(config, processed_self_x_in, cutted_lst_h[-1])
+                lst_output.append(self.get_hidden_to_output_network(h)[0])
 
             # define the target y
-            if len(pred_labels) > 0:
-                self.target_labels = tf.stack(pred_labels, axis=1, name="target_labels")
             self.target_y = tf.stack(lst_output, axis=1, name="target_y")
             if config['distance_model']:
                 self.target_y = tf.cumsum(self.target_y, axis=1) + tf.expand_dims(unstacked_x[-1], axis=1)
@@ -141,12 +134,10 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             err = self.target_y - self.y
             squared_err = tf.pow(err, 2)
 
-            self.error = 0.5 * tf.reduce_mean(squared_err) + loss
+            # So far we have got the model
+            self.error = 0.5 * tf.reduce_mean(squared_err)
             self.a_error = tf.reduce_mean(tf.sqrt(tf.reduce_sum(squared_err, axis=0)), name="a_error")
             self.single_error = tf.reduce_mean(tf.reduce_mean(tf.abs(err), axis=1), axis=1, name="single_error")
-
-            # determine classification rate
-            self.classification_rate = class_error / tf.cast(tf.size(self.labels), tf.float32)
 
             # increment global episode
             self.inc_global_episode = tf.assign(self.global_episode,
@@ -166,25 +157,6 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         # init the global variables initializer
         tf.set_random_seed(self.config['seed'])
-
-        # create a new session for running the model
-        # the session is not visible to the callee
-        self.sess = tf.Session()
-
-        # this represents the writers
-        self.train_writer = tf.summary.FileWriter(config['log_dir'] + 'train', self.sess.graph)
-        self.test_writer = tf.summary.FileWriter(config['log_dir'] + 'test', self.sess.graph)
-
-        # create some summaries
-        with tf.name_scope('summaries'):
-
-            # create all summaries
-            tf.summary.scalar("mean_squared_error", self.error)
-            tf.summary.scalar("absolute_error", self.a_error)
-            tf.summary.scalar("learning_rate", self.learning_rate)
-
-        # merge all summaries
-        self.summaries = tf.summary.merge_all()
 
         # init if not restored
         init = tf.global_variables_initializer()
@@ -273,47 +245,17 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         """
         return [self.pre_highway_network.get_graph(x_in) for x_in in unstacked_x]
 
-    def get_hidden_to_output_network(self, lst_h, labels):
+    def get_hidden_to_output_network(self, lst_h):
         """This method creates the hidden to output layer.
 
         Args:
             lst_h: A list of list, containing the hidden states for each layer.
-            labels: List of Tensors containing the target labels
 
         Returns:
             The output layer itself.
         """
 
-        # First of all guide the hidden states through the post highway network
-        outputs = [self.post_highway_network.get_graph(tf.concat(h, axis=0)) for h in lst_h]
-
-        # Check how much class outputs are there
-        O = self.config['num_output']
-        N = self.config['num_class_slots']
-        label_loss = tf.constant(0.0, dtype=tf.float32)
-
-        # When classification slots are activated
-        pred_labels = list()
-        classification_error = tf.constant(0.0, dtype=tf.float32)
-
-        if N > 0:
-            for k in range(len(outputs)):
-
-                # create the cross entropy using the labels and the corresponding nodes
-                squeezed_logits = tf.squeeze(outputs[k][O:, :])
-                cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(
-                    logits=squeezed_logits, labels=tf.cast(labels[k], tf.float32))
-
-                # Add all single terms in cross entropy to label loss
-                label_loss += tf.reduce_sum(cross_entropy)
-                predicted_labels = tf.abs(tf.round(tf.sigmoid(outputs[k][O, :])) - tf.cast(labels[k], tf.float32))
-                classification_error += tf.reduce_sum(predicted_labels)
-
-                # Additionally transform
-                outputs[k] = outputs[k][:O, :]
-                pred_labels.append(predicted_labels)
-
-        return outputs, pred_labels, classification_error, label_loss
+        return [self.post_highway_network.get_graph(tf.concat(h, axis=0)) for h in lst_h]
 
     def get_preprocess_network(self):
         """This method delivers the pre processing network."""
@@ -331,8 +273,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             'h_node_activation': self.config['pre_h_node_activation'],
             'seed': self.config['seed'],
             'dropout_prob': self.config['dropout_prob'],
-            'layer_normalization': self.config['pre_layer_normalization'],
-            'num_class_slots': 0
+            'layer_normalization': self.config['pre_layer_normalization']
         }
 
         return HighwayNetwork(highway_conf)
@@ -353,8 +294,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             'h_node_activation': self.config['post_h_node_activation'],
             'seed': self.config['seed'],
             'dropout_prob': self.config['dropout_prob'],
-            'layer_normalization': self.config['post_layer_normalization'],
-            'num_class_slots': self.config['num_class_slots']
+            'layer_normalization': self.config['post_layer_normalization']
         }
 
         return HighwayNetwork(highway_conf)
@@ -375,7 +315,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
 
         for k in range(len(all_values)):
             mod_name = str.replace(str.replace(all_vars[k].name, '/', '-'), '_', '-')
-            np.save('{}{}/{}.npy'.format(self.config['log_dir'], folder, mod_name), all_values[k])
+            np.save('{}/{}/{}.npy'.format(self.config['log_dir'], folder, mod_name), all_values[k])
 
     def restore(self, folder):
         """This method restores the model from the specified folder."""
@@ -384,7 +324,7 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         assign_list = list()
         for k in range(len(all_vars)):
             mod_name = str.replace(str.replace(all_vars[k].name, '/', '-'), '_', '-')
-            tensor = np.load('{}{}/{}.npy'.format(self.config['log_dir'], folder, mod_name))
+            tensor = np.load('{}/{}/{}.npy'.format(self.config['log_dir'], folder, mod_name))
             assign_list.append(tf.assign(all_vars[k], tensor))
 
         self.sess.run(tf.group(*assign_list))
@@ -439,21 +379,9 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
             steps: The number of steps the model should execute.
         """
 
-        fd = {self.x: trajectories, self.training_time: True,
-              self.y: target_trajectories[:self.config['num_output'], :, :]}
-
-        if self.config['num_class_slots'] > 0:
-            fd[self.labels] = target_trajectories[self.config['num_output'], :, :]
-
         # we want to perform n steps
         for k in range(steps):
-            _, summary = self.sess.run([self.minimizer, self.summaries], feed_dict=fd)
-
-    def inc_episode(self):
-        self.sess.run(self.inc_global_episode)
-
-    def get_episode(self):
-        return self.sess.run(self.global_episode)
+            self.sess.run([self.minimizer], feed_dict={self.x: trajectories, self.y: target_trajectories, self.training_time: True})
 
     def validate(self, trajectories, target_trajectories, test=True, batch_size=131072):
         """This method basically validates the passed trajectories.
@@ -474,44 +402,30 @@ class RecurrentNeuralNetwork(RecurrentPredictionModel):
         # create the errors
         overall_error = 0
         overall_single_error = 0
-        overall_classification = 0
         s_div = 0
         a_div = 0
-        c_div = 0
 
         # iterate over the number of sets
         for k in range(num_sets + 1):
-
             batch_trajectories = trajectories[:, :, k*batch_size:(k+1)*batch_size]
-            batch_target_trajectories = target_trajectories[:self.config['num_output'], :, k*batch_size:(k+1)*batch_size]
+            batch_target_trajectories = target_trajectories[:, :, k*batch_size:(k+1)*batch_size]
 
-            fd = {self.x: batch_trajectories, self.y: batch_target_trajectories, self.training_time: False}
-
-            if self.config['num_class_slots'] > 0:
-                fd[self.labels] = target_trajectories[self.config['num_output'], :, k*batch_size:(k+1)*batch_size]
-
-            aerror, serror, class_error, summary, episode = self.sess.run([self.a_error, self.single_error, self.classification_rate, self.summaries, self.global_episode], feed_dict=fd)
+            aerror, serror, episode = self.sess.run([self.a_error, self.single_error, self.global_episode], feed_dict={self.x: batch_trajectories, self.y: batch_target_trajectories, self.training_time: False})
 
             # add the errors
             s_mult = np.size(batch_trajectories, 2)
             a_mult = np.size(batch_trajectories, 1) * np.size(batch_trajectories, 2)
 
             overall_error += a_mult * aerror
-            a_div += a_mult
             overall_single_error += s_mult * serror
             s_div += s_mult
-            if self.config['num_class_slots'] > 0:
-                c_mult = np.size(fd[self.labels])
-                c_div += c_mult
-                overall_classification += c_mult * class_error
+            a_div += a_mult
 
-            self.write_summaries(summary, test, episode)
 
         overall_error /= a_div
         overall_single_error /= s_div
-        overall_classification /= c_div
 
-        return overall_error, overall_single_error, overall_classification
+        return overall_error, overall_single_error
 
     def predict(self, trajectories):
         return self.sess.run([self.target_y], feed_dict={self.x: trajectories, self.training_time: False})
