@@ -86,10 +86,14 @@ class ScriptRunner:
         self.update = False
         self.semaphore = threading.Semaphore()
         self.progress_count = self.run_manager.current_episode
+        self.stats.last_episode = self.run_manager.current_episode - 1
 
         # set interactive mode on
         plt.ion()
         plt.show()
+
+        if self.run_manager.current_episode > 0:
+            self.stats.plot()
 
         thread = threading.Thread(None, self.train, "Training Thread")
         thread.start()
