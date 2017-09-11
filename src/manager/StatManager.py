@@ -98,7 +98,7 @@ class StatManager:
 
             # plot for all sets
             for li in range(len(self.labels)):
-                m = np.mean(self.stats_dict[key][li][:, :self.last_episode + 1], axis=0)
+                m = np.sqrt(np.sum(np.square(self.stats_dict[key][li][:, :self.last_episode + 1]), axis=0))
                 ax.plot(m, label=self.labels[li])
 
             ax.title.set_text('{} is {}'.format(key, m[-1]))
