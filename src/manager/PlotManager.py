@@ -54,7 +54,6 @@ class PlotManager:
         # print as much trajectories as wanted
         for pi in range(2 * self.num_trajectories):
             self.ax_arr[pi].cla()
-
             fi = 0
             last_input = 3 * [0]
             for [label, n, typ] in self.in_grouping:
