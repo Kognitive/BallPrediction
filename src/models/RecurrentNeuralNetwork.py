@@ -415,7 +415,7 @@ class RecurrentNeuralNetwork:
         return overall_absolute_error / division_factor
 
     def predict(self, trajectories):
-        return self.sess.run([self.target_y], feed_dict={self.x: trajectories, self.training_time: False})
+        return self.sess.run(self.target_y, feed_dict={self.x: trajectories, self.training_time: False})
 
     def init_params(self):
         """This initializes the parameters."""

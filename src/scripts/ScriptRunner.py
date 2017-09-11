@@ -26,6 +26,7 @@ import threading
 
 from src.manager.DataManager import DataManager
 from src.manager.RunManager import RunManager
+from src.manager.PlotManager import PlotManager
 from src.utils.Progressbar import Progressbar
 from src.utils.ThreadedPause import ThreadedPause
 
@@ -35,11 +36,6 @@ class ScriptRunner:
     def __init__(self, run_config, model_details):
         self.run_config = run_config
         self.model_details = model_details
-
-    def run(self):
-
-        run_config = self.run_config
-        model_details = self.model_details
 
         # Format settings
         line_length = 80
@@ -88,12 +84,30 @@ class ScriptRunner:
         self.progress_count = self.run_manager.current_episode
         self.stats.last_episode = self.run_manager.current_episode - 1
 
+        # obtain slices etc.
+        validation_set_index = self.run_config['validation_set_index']
+        train_set_index = self.run_config['train_set_index']
+        val_data = self.data_sets[validation_set_index]
+        train_data = self.data_sets[train_set_index]
+        num_vis_traj = self.run_config['num_visualized_results']
+        va_slices = np.random.permutation(np.size(val_data[0], 2))[:num_vis_traj]
+        tr_slices = np.random.permutation(np.size(train_data[0], 2))[:num_vis_traj]
+
+        self.all_in = np.concatenate((train_data[0][:, :, tr_slices], val_data[0][:, :, va_slices]), axis=2)
+        real_output = np.concatenate((train_data[1][:, :, tr_slices], val_data[1][:, :, va_slices]), axis=2)
+        pred_output = self.run_manager.model.predict(self.all_in)
+
+        self.plots = PlotManager(run_config['num_visualized_results'],
+                                 run_config['input_grouping'],
+                                 run_config['output_grouping'], self.all_in, real_output, pred_output)
+
         # set interactive mode on
         plt.ion()
         plt.show()
 
         if self.run_manager.current_episode > 0:
             self.stats.plot()
+            self.plots.plot()
 
         thread = threading.Thread(None, self.train, "Training Thread")
         thread.start()
@@ -120,6 +134,9 @@ class ScriptRunner:
             # calculate validation error
             all_errors = [self.run_manager.model.validate(data_set[0], data_set[1]) for data_set in self.data_sets]
 
+            # obtain a prediction of the model
+            pred_output = self.run_manager.model.predict(self.all_in)
+
             # update plot data
             self.semaphore.acquire()
 
@@ -127,6 +144,7 @@ class ScriptRunner:
             self.progress_count += 1
             self.update = True
             self.stats.store_statistics(episode, all_errors)
+            self.plots.update_data(pred_output)
 
             self.semaphore.release()
 
@@ -153,6 +171,7 @@ class ScriptRunner:
 
             self.progress_count = 0
             self.stats.plot()
+            self.plots.plot()
             self.update = False
 
         self.semaphore.release()

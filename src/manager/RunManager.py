@@ -124,7 +124,7 @@ class RunManager:
     def create_stats(self):
         return StatManager(self.model_config['episodes'],
                            self.output_dir,
-                           self.config['data_grouping'],
+                           self.config['output_grouping'],
                            self.reload,
                            self.config['set_labels'])
 
