@@ -44,8 +44,9 @@ run_config = {
 
     # ------------ Data -------------------------------------------------------
 
-    'data_dir': 'training_data/sim/data_v4',
-    'data_grouping': [['pos_error', 3]],
+    'data_dir': 'training_data/sim/data_v6',
+    'input_grouping': [['in_xyz', 3, 'traj']],
+    'output_grouping': [['out_xyz', 3, 'traj']],
     'col_in': [0, 2, 4],
     'col_out': [0, 2, 4],
 
@@ -96,8 +97,8 @@ model_config = {
     # ------------ Recurrent --------------------------------------------------
 
     'rec_num_hidden': 32,
-    'rec_num_layers': 33,
-    'rec_num_layers_student_forcing': 100,
+    'rec_num_layers': 5,
+    'rec_num_layers_student_forcing': 5,
     'rec_num_layers_teacher_forcing': 0,
     'rec_num_stacks': 4,
     'rec_depth': 6,
@@ -128,4 +129,4 @@ model_config = {
 }
 
 # retrieve the model and the standard_configuration
-ScriptRunner(run_config, [model_config, RecurrentHighWayNetwork]).run()
+ScriptRunner(run_config, [model_config, RecurrentHighWayNetwork])

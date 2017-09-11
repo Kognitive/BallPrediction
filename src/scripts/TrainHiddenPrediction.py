@@ -31,7 +31,7 @@ run_config = {
     # ------------ General ----------------------------------------------------
 
     'root_dir': 'run/hidden_state_prediction',
-    'reload_dir': None,
+    'reload_dir': '2017-09-10_10-44-00',
     'reload_checkpoint': 'general',
     'use_wizard': False,
 
@@ -44,8 +44,9 @@ run_config = {
 
     # ------------ Data -------------------------------------------------------
 
-    'data_dir': 'training_data/sim/data_v0',
-    'data_grouping': [['vel_error', 3], ['hidden_error', 1]],
+    'data_dir': 'training_data/sim/data_v5',
+    'input_grouping': [['xyz', 3, 'traj']],
+    'output_grouping': [['vel', 3, 'vector'], ['hidden', 1, 'zpoint']],
     'col_in': [0, 2, 4],
     'col_out': [1, 3, 5, 6],
 

@@ -36,7 +36,7 @@ class StatManager:
         self.files = files
         self.labels = labels
 
-        for [file, size] in files:
+        for [file, size, _] in files:
 
             val_list = list()
             for prefix in labels:
@@ -58,7 +58,7 @@ class StatManager:
         self.last_episode = -1
 
         # Create the axes for the plot
-        plt_error = plt.figure('Error')
+        plt_error = plt.figure(0)
         self.plt_axes = [None] * self.file_count
 
         # create all axes
@@ -72,7 +72,7 @@ class StatManager:
             error = errors[error_index]
 
             fi = 0
-            for [file, si] in self.files:
+            for [file, si, _] in self.files:
                 self.stats_dict[file][error_index][:, current_episode] = error[fi:fi+si]
                 fi += si
 
@@ -80,7 +80,7 @@ class StatManager:
 
     def save_statistics(self):
 
-        for [file, _] in self.files:
+        for [file, _, _] in self.files:
             for li in range(len(self.labels)):
                 label = self.labels[li]
                 complete_file = join(self.output_dir, "{}_{}".format(label, file))

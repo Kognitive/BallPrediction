@@ -268,6 +268,7 @@ class RecurrentHighWayNetworkCell:
 
     def zone_out_layer(self, x, x_prev):
         d = tf.cast(self.bern.sample([self.config['num_hidden'], 1]), tf.float32)
+        d = tf.Print(d, [d], 'd')
         res = tf.multiply(d, x_prev) + tf.multiply(1 - d, x)
 
         # pass back the result
