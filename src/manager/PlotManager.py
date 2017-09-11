@@ -90,7 +90,7 @@ class PlotManager:
                     # if it is of type trajectory
                     elif typ == 'vector':
                         assert n == 3
-                        xyz = np.stack([last_input, output[fi, 0, pi] + last_input], axis=1)
+                        xyz = np.stack([last_input, output[fi:si, 0, pi] + last_input], axis=1)
                         self.ax_arr[pi].plot(xyz[0], xyz[1], xyz[2], label="{}_{}".format(name, label))
 
                     elif typ == 'zpoint':

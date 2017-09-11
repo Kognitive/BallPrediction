@@ -66,12 +66,12 @@ model_config = {
     'episodes': 10000,
     'steps_per_episode': 100,
     'steps_per_batch': 1,
-    'batch_size': 4096,
+    'batch_size': 1024,
 
     # ------------ Properties -------------------------------------------------
 
     'unique_name': "RecurrentHighWayNetwork",
-    'seed': 28,
+    'seed': 35,
 
     # ------------ Data -------------------------------------------------------
 
@@ -92,16 +92,16 @@ model_config = {
     # ------------ Regularization ---------------------------------------------
 
     'dropout_prob': 1.0,
-    'zone_out_probability': 0.0,
+    'zone_out_probability': 0.2,
 
     # ------------ Recurrent --------------------------------------------------
 
     'rec_num_hidden': 32,
-    'rec_num_layers': 5,
-    'rec_num_layers_student_forcing': 5,
+    'rec_num_layers': 30,
+    'rec_num_layers_student_forcing': 100,
     'rec_num_layers_teacher_forcing': 0,
-    'rec_num_stacks': 4,
-    'rec_depth': 6,
+    'rec_num_stacks': 3,
+    'rec_depth': 8,
     'rec_h_node_activation': 'tanh',
     'rec_learnable_hidden_states': True,
     'rec_coupled_gates': True,
@@ -109,7 +109,7 @@ model_config = {
 
     # ------------ Preprocess -------------------------------------------------
 
-    'pre_num_hidden': 16,
+    'pre_num_hidden': 32,
     'pre_num_layers': 4,
     'pre_in_activation': 'lrelu',
     'pre_out_activation': 'lrelu',

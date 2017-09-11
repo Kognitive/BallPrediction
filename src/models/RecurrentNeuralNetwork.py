@@ -133,7 +133,7 @@ class RecurrentNeuralNetwork:
             squared_err = tf.pow(err, 2)
 
             # So far we have got the model
-            self.error = 0.5 * tf.reduce_mean(squared_err)
+            self.error = 0.5 * tf.reduce_mean(tf.reduce_sum(squared_err, axis=[0, 1]))
             self.single_absolute_error = tf.reduce_sum(tf.reduce_mean(tf.abs(err), axis=1), axis=1)
 
             # create minimizer
