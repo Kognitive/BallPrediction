@@ -37,8 +37,8 @@ class PlotManager:
 
         # create all subplots
         for k in range(num_traj * 2):
-            num = 2 * 100 + num_traj * 10 + (k + 1)
-            self.ax_arr[k] = self.fig.add_subplot(num, projection='3d')
+            #num = 2 * 100 + num_traj * 10 + (k + 1)
+            self.ax_arr[k] = self.fig.add_subplot(2, num_traj, k+1, projection='3d')
 
         self.fig.show()
         self.input = input_data
@@ -101,4 +101,4 @@ class PlotManager:
                         self.ax_arr[pi].scatter(x, y, z, label="{}_{}".format(name, label))
 
                 fi = si
-            self.ax_arr[pi].legend()
+            #self.ax_arr[pi].legend()
