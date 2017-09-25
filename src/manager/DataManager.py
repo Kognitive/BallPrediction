@@ -115,7 +115,7 @@ class DataManager:
             self.data.append(data_tuple)
             fi = si
 
-        pickle.dump(self.data, open(self.config['data_dir'] + "/data.pickle", 'wb'))
+        pickle.dump(self.data, open(join(self.config['data_dir'], "data.pickle"), 'wb'))
         return self.data
 
     @staticmethod

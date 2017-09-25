@@ -9,7 +9,7 @@ class TrajectoryPlot:
         """
         :param num_traj: The amount of training and validation trajectories that are plotted
         """
-        self.fig = plt.figure(1)
+        self.fig = plt.figure("Trajectories")
         self.ax_arr = [None] * (num_traj * 2)
 
         # create all subplots
