@@ -33,7 +33,7 @@ run_config = {
     'root_dir': 'run/position_prediction',
     'reload_dir': None,
     'reload_checkpoint': 'general',
-    'use_wizard': False,
+    'use_wizard': True,
 
     # ------------ Sets -------------------------------------------------------
 
@@ -44,7 +44,7 @@ run_config = {
 
     # ------------ Data -------------------------------------------------------
 
-    'data_dir': 'training_data/sim/data_v6',
+    'data_dir': 'training_data/sim/data_v4_subset',
     'input_grouping': [['in_xyz', 3, 'traj']],
     'output_grouping': [['out_xyz', 3, 'traj']],
     'col_in': [0, 2, 4],
@@ -52,7 +52,7 @@ run_config = {
 
     # ------------ Plots ------------------------------------------------------
 
-    'num_visualized_results': 3
+    'num_visualized_results': 5
 }
 
 # =============================================================================
@@ -63,10 +63,10 @@ model_config = {
 
     # ------------ Training ---------------------------------------------------
 
-    'episodes': 10000,
+    'episodes': 5000,
     'steps_per_episode': 100,
     'steps_per_batch': 1,
-    'batch_size': 1024,
+    'batch_size': 2048,
 
     # ------------ Properties -------------------------------------------------
 
@@ -92,7 +92,7 @@ model_config = {
     # ------------ Regularization ---------------------------------------------
 
     'dropout_prob': 1.0,
-    'zone_out_probability': 0.2,
+    'zone_out_probability': 0.0,
 
     # ------------ Recurrent --------------------------------------------------
 
